@@ -1,9 +1,6 @@
 import { NextResponse } from 'next/server';
-import YahooFinance from 'yahoo-finance2';
 
 export const dynamic = 'force-dynamic';
-
-const yahooFinance = new YahooFinance();
 
 const SYMBOLS = ['2330.TW', '2317.TW', 'BTC-USD'];
 
@@ -13,14 +10,31 @@ export async function GET() {
 
     const results = await Promise.allSettled(
       SYMBOLS.map(async (symbol) => {
-        const quote = await yahooFinance.quote(symbol);
-        return { symbol, data: quote };
+        // Use Yahoo Finance v8 API directly - no auth required for quotes
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
+        const res = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; WealthDashboard/1.0)',
+          },
+          next: { revalidate: 60 },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        return { symbol, data };
       })
     );
 
     for (const result of results) {
       if (result.status === 'fulfilled') {
-        prices[result.value.symbol] = result.value.data;
+        const { symbol, data } = result.value;
+        const chart = data?.chart?.result?.[0];
+        const meta = chart?.meta;
+        prices[symbol] = {
+          regularMarketPrice: meta?.regularMarketPrice || meta?.previousClose || 0,
+          regularMarketPreviousClose: meta?.regularMarketPreviousClose,
+          currency: meta?.currency,
+          symbol,
+        };
       }
     }
 

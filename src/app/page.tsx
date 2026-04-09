@@ -26,6 +26,7 @@ interface CryptoHolding {
   value?: number;
   gain?: number;
   gainPercent?: number;
+  category?: string;
 }
 
 const MOCK_BANK = {
@@ -33,6 +34,7 @@ const MOCK_BANK = {
   accountType: '數位帳戶',
   balance: 258420,
   currency: 'TWD',
+  syncTime: '2026-04-09 18:45',
   transactions: [
     { id: '1', description: '薪水入帳', amount: 85000, date: '2026-03-25', type: 'income' },
     { id: '2', description: 'PChome 購物', amount: -3240, date: '2026-03-22', type: 'expense' },
@@ -47,9 +49,9 @@ const STOCK_HOLDINGS: StockHolding[] = [
 ];
 
 const CRYPTO_HOLDINGS: CryptoHolding[] = [
-  { id: 'bitcoin', symbol: 'BTC', name: 'Bitcoin', amount: 0.85, avgCost: 62000 },
-  { id: 'ethereum', symbol: 'ETH', name: 'Ethereum', amount: 4.2, avgCost: 2800 },
-  { id: 'solana', symbol: 'SOL', name: 'Solana', amount: 25, avgCost: 95 },
+  { id: 'bitcoin', symbol: 'BTC', name: 'Bitcoin', amount: 0.85, avgCost: 62000, category: 'Store of Value' },
+  { id: 'ethereum', symbol: 'ETH', name: 'Ethereum', amount: 4.2, avgCost: 2800, category: 'Layer 1' },
+  { id: 'solana', symbol: 'SOL', name: 'Solana', amount: 25, avgCost: 95, category: 'Layer 1' },
 ];
 
 export default function Dashboard() {
@@ -57,20 +59,25 @@ export default function Dashboard() {
   const [crypto, setCrypto] = useState<CryptoHolding[]>(CRYPTO_HOLDINGS);
   const [loading, setLoading] = useState(true);
   const [totalNetWorth, setTotalNetWorth] = useState(0);
+  const [lastSync, setLastSync] = useState('');
 
   useEffect(() => {
+    const now = new Date();
+    setLastSync(
+      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    );
+
     async function fetchData() {
       try {
         const stockRes = await fetch('/api/stocks');
-        const stockData = await stockRes.json();
+        const stockData = await stockRes.json() as { prices?: Record<string, number> };
         if (stockData.prices) {
           const updated = STOCK_HOLDINGS.map((s) => {
-            const price = stockData.prices[s.symbol];
-            const currentPrice = price?.regularMarketPrice || s.avgCost;
+            const currentPrice = (stockData.prices?.[s.symbol] as number) || s.avgCost;
             const value = currentPrice * s.shares;
             const cost = s.avgCost * s.shares;
             const gain = value - cost;
-            const gainPercent = ((currentPrice - s.avgCost) / s.avgCost) * 100;
+            const gainPercent = s.avgCost > 0 ? ((currentPrice - s.avgCost) / s.avgCost) * 100 : 0;
             return { ...s, currentPrice, value, gain, gainPercent };
           });
           setStocks(updated);
@@ -81,15 +88,14 @@ export default function Dashboard() {
 
       try {
         const cryptoRes = await fetch('/api/crypto');
-        const cryptoData = await cryptoRes.json();
+        const cryptoData = await cryptoRes.json() as { prices?: Record<string, { usd?: number }> };
         if (cryptoData.prices) {
           const updated = CRYPTO_HOLDINGS.map((c) => {
-            const price = cryptoData.prices[c.id];
-            const currentPrice = price?.usd || c.avgCost;
+            const currentPrice = cryptoData.prices?.[c.id]?.usd || c.avgCost;
             const value = currentPrice * c.amount;
             const cost = c.avgCost * c.amount;
             const gain = value - cost;
-            const gainPercent = ((currentPrice - c.avgCost) / c.avgCost) * 100;
+            const gainPercent = c.avgCost > 0 ? ((currentPrice - c.avgCost) / c.avgCost) * 100 : 0;
             return { ...c, currentPrice, value, gain, gainPercent };
           });
           setCrypto(updated);
@@ -121,85 +127,109 @@ export default function Dashboard() {
   const cryptoTotal = crypto.reduce((sum, c) => sum + (c.value || 0), 0);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-slate-950 text-slate-100">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex items-center justify-between">
+      <header className="border-b border-white/10 bg-slate-950/80 backdrop-blur sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 py-5 sm:px-6 lg:px-8">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">💰 Wealth Dashboard</h1>
-              <p className="text-sm text-gray-500 mt-1">你的個人資產總覽</p>
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-300">
+                Live Wealth OS · Updated {new Date().toISOString().split('T')[0]}
+              </div>
+              <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Wealth Dashboard</h1>
+              <p className="mt-2 max-w-2xl text-sm text-slate-400">
+                整合銀行、證券、加密資產與會員系統的個人資產中心。
+              </p>
             </div>
-            <div className="text-right">
-              <p className="text-xs text-gray-400 uppercase tracking-wide">總淨資產</p>
-              <p className="text-3xl font-bold text-indigo-600">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+              <p className="text-xs uppercase tracking-[0.25em] text-slate-400">總淨資產</p>
+              <p className="mt-2 text-3xl font-bold text-white">
                 {loading ? '...' : formatCurrency(totalNetWorth)}
+              </p>
+              <p className="mt-1 text-xs text-slate-400">
+                已連結 Plaid · Sync {lastSync}
               </p>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* Bank Card */}
+      <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8 space-y-8">
+        {/* Membership Section */}
+        <section className="grid gap-4 lg:grid-cols-3">
+          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 to-slate-800 p-6 lg:col-span-2">
+            <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Membership</p>
+            <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-2xl font-semibold">Gold Member</h2>
+                <p className="mt-1 text-sm text-slate-400">帳戶整合、分類視圖與進階資產追蹤已啟用。</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="rounded-2xl bg-white/5 px-4 py-3">
+                  登入狀態<br />
+                  <span className="text-emerald-300 font-semibold">Authenticated</span>
+                </div>
+                <div className="rounded-2xl bg-white/5 px-4 py-3">
+                  方案<br />
+                  <span className="text-amber-300 font-semibold">Premium</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Account Linking */}
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+            <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Account Linking</p>
+            <div className="mt-4 space-y-3 text-sm text-slate-300">
+              <div className="flex items-center justify-between">
+                <span>Bank</span>
+                <span className="text-emerald-300">Connected</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Brokerage</span>
+                <span className="text-emerald-300">Connected</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Crypto</span>
+                <span className="text-emerald-300">Connected</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Asset Cards */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <BankCard bank={MOCK_BANK} formatCurrency={formatCurrency} />
-
-          {/* Stock Card */}
-          <StockCard
-            holdings={stocks}
-            total={stockTotal}
-            loading={loading}
-            formatCurrency={formatCurrency}
-          />
-
-          {/* Crypto Card */}
-          <CryptoCard
-            holdings={crypto}
-            total={cryptoTotal}
-            loading={loading}
-            formatCurrency={formatCurrency}
-          />
+          <StockCard holdings={stocks} total={stockTotal} loading={loading} formatCurrency={formatCurrency} />
+          <CryptoCard holdings={crypto} total={cryptoTotal} loading={loading} formatCurrency={formatCurrency} />
         </div>
 
         {/* Asset Allocation Summary */}
         {!loading && (
-          <div className="mt-8 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">📊 資產配置</h2>
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div className="p-4 bg-blue-50 rounded-lg">
-                <p className="text-xs text-blue-500 uppercase mb-1">銀行存款</p>
-                <p className="text-xl font-bold text-blue-700">{formatCurrency(MOCK_BANK.balance)}</p>
-                <p className="text-xs text-blue-400 mt-1">
-                  {((MOCK_BANK.balance / totalNetWorth) * 100).toFixed(1)}%
-                </p>
-              </div>
-              <div className="p-4 bg-green-50 rounded-lg">
-                <p className="text-xs text-green-500 uppercase mb-1">股票</p>
-                <p className="text-xl font-bold text-green-700">{formatCurrency(stockTotal)}</p>
-                <p className="text-xs text-green-400 mt-1">
-                  {((stockTotal / totalNetWorth) * 100).toFixed(1)}%
-                </p>
-              </div>
-              <div className="p-4 bg-orange-50 rounded-lg">
-                <p className="text-xs text-orange-500 uppercase mb-1">加密貨幣</p>
-                <p className="text-xl font-bold text-orange-700">{formatCurrency(cryptoTotal)}</p>
-                <p className="text-xs text-orange-400 mt-1">
-                  {((cryptoTotal / totalNetWorth) * 100).toFixed(1)}%
-                </p>
-              </div>
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-5">
+              <p className="text-xs text-blue-400 uppercase tracking-wider">銀行存款</p>
+              <p className="mt-2 text-2xl font-bold text-white">{formatCurrency(MOCK_BANK.balance)}</p>
+              <p className="mt-1 text-xs text-blue-300">{(MOCK_BANK.balance / totalNetWorth * 100).toFixed(1)}%</p>
+            </div>
+            <div className="rounded-2xl border border-green-500/20 bg-green-500/10 p-5">
+              <p className="text-xs text-green-400 uppercase tracking-wider">股票</p>
+              <p className="mt-2 text-2xl font-bold text-white">{formatCurrency(stockTotal)}</p>
+              <p className="mt-1 text-xs text-green-300">{(stockTotal / totalNetWorth * 100).toFixed(1)}%</p>
+            </div>
+            <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-5">
+              <p className="text-xs text-amber-400 uppercase tracking-wider">加密貨幣</p>
+              <p className="mt-2 text-2xl font-bold text-white">{formatCurrency(cryptoTotal)}</p>
+              <p className="mt-1 text-xs text-amber-300">{(cryptoTotal / totalNetWorth * 100).toFixed(1)}%</p>
             </div>
           </div>
         )}
       </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 mt-8">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <p className="text-center text-xs text-gray-400">
-            Wealth Dashboard MVP · 資料僅供參考，不構成投資建議
-          </p>
+      <footer className="border-t border-white/10 bg-slate-950 mt-8">
+        <div className="max-w-7xl mx-auto px-4 py-4 text-center text-xs text-slate-500 sm:px-6 lg:px-8">
+          Wealth Dashboard MVP · 資料僅供參考，不構成投資建議
         </div>
       </footer>
     </div>

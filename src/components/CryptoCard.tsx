@@ -8,6 +8,7 @@ interface CryptoHolding {
   value?: number;
   gain?: number;
   gainPercent?: number;
+  category?: string;
 }
 
 interface CryptoCardProps {
@@ -19,12 +20,12 @@ interface CryptoCardProps {
 
 export default function CryptoCard({ holdings, total, loading, formatCurrency }: CryptoCardProps) {
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-      <div className="bg-gradient-to-r from-orange-500 to-orange-600 px-6 py-4">
+    <div className="rounded-3xl border border-white/10 bg-white/5 overflow-hidden">
+      <div className="bg-gradient-to-r from-amber-500/80 to-orange-500/80 px-6 py-5">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-orange-100 text-xs uppercase tracking-wide">加密貨幣</p>
-            <p className="text-white font-semibold mt-1">₿ 數位資產</p>
+            <p className="text-xs uppercase tracking-[0.25em] text-amber-100/70">加密貨幣</p>
+            <p className="mt-1 text-lg font-semibold text-white">數位資產</p>
           </div>
           <span className="text-3xl">₿</span>
         </div>
@@ -32,37 +33,30 @@ export default function CryptoCard({ holdings, total, loading, formatCurrency }:
 
       <div className="p-6">
         <div className="mb-4">
-          <p className="text-xs text-gray-400 uppercase tracking-wide">總市值</p>
-          <p className="text-2xl font-bold text-gray-800 mt-1">
-            {loading ? (
-              <span className="text-gray-300">載入中...</span>
-            ) : (
-              formatCurrency(total)
-            )}
+          <p className="text-xs uppercase tracking-[0.25em] text-slate-400">總市值</p>
+          <p className="mt-2 text-3xl font-bold text-white">
+            {loading ? <span className="text-slate-500">載入中...</span> : formatCurrency(total)}
           </p>
         </div>
 
-        <div className="border-t border-gray-100 pt-4">
-          <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-3">
-            🪙 持有資產
-          </p>
-          <div className="space-y-3">
+        <div className="border-t border-white/10 pt-4">
+          <p className="text-xs uppercase tracking-[0.25em] text-slate-400 mb-3">持有資產</p>
+          <div className="space-y-4">
             {holdings.map((coin) => (
-              <div key={coin.id} className="flex items-center justify-between text-sm">
+              <div key={coin.id} className="flex items-center justify-between gap-3 text-sm">
                 <div>
-                  <p className="text-gray-700 font-medium">{coin.name}</p>
-                  <p className="text-gray-400 text-xs">
-                    {coin.amount} {coin.symbol}
+                  <p className="font-medium text-white">{coin.name}</p>
+                  <p className="text-slate-500 text-xs">
+                    {coin.category || 'Crypto'} · {coin.amount} {coin.symbol}
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-gray-800 font-medium">
+                  <p className="font-medium text-white">
                     {loading ? '...' : formatCurrency(coin.value || 0)}
                   </p>
                   {!loading && coin.gain !== undefined && (
-                    <p className={`text-xs ${coin.gain >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                      {coin.gain >= 0 ? '+' : ''}
-                      {coin.gainPercent?.toFixed(2)}%
+                    <p className={`text-xs ${coin.gain >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {coin.gain >= 0 ? '+' : ''}{coin.gainPercent?.toFixed(2)}%
                     </p>
                   )}
                 </div>
