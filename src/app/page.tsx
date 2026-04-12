@@ -328,6 +328,8 @@ export default function Dashboard() {
   const cryptoUSD = crypto.reduce((s, c) => s + (c.value || 0), 0);
   const totalUSD = bankUSD + stockUSD + cryptoUSD;
   const totalDisplay = fromUSD(totalUSD, currency);
+  const totalTWD = totalUSD * TWD_PER_USD;
+  const totalWan = (totalTWD / 10000).toFixed(1);
 
   const fmt = useCallback((v: number) => formatDisplayCurrency(v, currency, privacy), [currency, privacy]);
   const fmtTWD = useCallback((v: number) => formatCurrencyTWD(v, privacy), [privacy]);
@@ -382,6 +384,11 @@ export default function Dashboard() {
                 <p className={`mt-1 text-2xl font-bold text-white ${privacy ? 'blur-sm select-none' : ''}`}>
                   {loading ? '...' : fmt(totalDisplay)}
                 </p>
+                {totalTWD > 0 && (
+                  <p className={`mt-0.5 text-sm font-medium text-slate-400 ${privacy ? 'blur-sm select-none' : ''}`}>
+                    {loading ? '' : `${totalWan}萬 TWD`}
+                  </p>
+                )}
               </div>
             </div>
           </div>
