@@ -1,496 +1,58 @@
-'use client';
+import DashboardClient from './DashboardClient';
+import type { StockHolding, CryptoHolding } from './DashboardClient';
 
-import { useEffect, useState, useCallback } from 'react';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
-import BankCard from '@/components/BankCard';
-import StockCard from '@/components/StockCard';
-import CryptoCard from '@/components/CryptoCard';
+// Server Component — fetches data directly (no client-side fetch timing issues)
+export default async function Page() {
+  const BASE = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-interface StockHolding {
-  symbol: string;
-  name: string;
-  shares: number;
-  avgCost: number;
-  currentPrice?: number;
-  value?: number;
-  gain?: number;
-  gainPercent?: number;
-  category?: string;
-}
+  let stockPrices: Record<string, { regularMarketPrice?: number }> = {};
+  let cryptoPrices: Record<string, { usd?: number }> = {};
 
-interface CryptoHolding {
-  id: string;
-  symbol: string;
-  name: string;
-  amount: number;
-  avgCost: number;
-  currentPrice?: number;
-  value?: number;
-  gain?: number;
-  gainPercent?: number;
-  category?: string;
-}
+  try {
+    const [stockRes, cryptoRes] = await Promise.all([
+      fetch(`${BASE}/api/stocks`, { cache: 'no-store' }),
+      fetch(`${BASE}/api/crypto`, { cache: 'no-store' }),
+    ]);
+    const stockData = await stockRes.json() as { prices?: Record<string, { regularMarketPrice?: number }> };
+    const cryptoData = await cryptoRes.json() as { prices?: Record<string, { usd?: number }> };
+    if (stockData.prices) stockPrices = stockData.prices;
+    if (cryptoData.prices) cryptoPrices = cryptoData.prices;
+  } catch (e) {
+    console.error('Server-side fetch failed:', e);
+  }
 
-type DisplayCurrency = 'USDC' | 'BTC' | 'ETH' | 'CNY';
-
-const CURRENCIES = ['USD', 'TWD', 'HKD', 'JPY', 'EUR'] as const;
-type Currency = typeof CURRENCIES[number];
-
-const CURRENCY_SYMBOLS: Record<Currency, string> = {
-  USD: '$',
-  TWD: 'NT$',
-  HKD: 'HK$',
-  JPY: '¥',
-  EUR: '€',
-};
-
-const CURRENCY_NAMES: Record<Currency, string> = {
-  USD: '美元',
-  TWD: '台幣',
-  HKD: '港幣',
-  JPY: '日圓',
-  EUR: '歐元',
-};
-
-const CURRENCY_DECIMALS: Record<Currency, number> = {
-  USD: 2,
-  TWD: 0,
-  HKD: 2,
-  JPY: 2,
-  EUR: 2,
-};
-
-const DISPLAY_CURRENCY_SYMBOLS: Record<DisplayCurrency, string> = {
-  USDC: '$',
-  BTC: '₿',
-  ETH: 'Ξ',
-  CNY: '¥',
-};
-
-// ─── FX Constants (fallback) ──────────────────────────────────────────────────
-const FALLBACK_FX = { USDC: 1, BTC: 67000, ETH: 3500, CNY: 7.25 };
-const TWD_PER_USD = 32.5;
-
-// ─── Static Data ──────────────────────────────────────────────────────────────
-const MOCK_BANK = {
-  name: '玉山銀行 (ESun)',
-  accountType: '數位帳戶',
-  balance: 258420,
-  currency: 'TWD',
-  syncTime: '2026-04-09 18:45',
-  transactions: [
-    { id: '1', description: '薪水入帳', amount: 85000, date: '2026-03-25', type: 'income' },
-    { id: '2', description: 'PChome 購物', amount: -3240, date: '2026-03-22', type: 'expense' },
-    { id: '3', description: '王品餐飲', amount: -1850, date: '2026-03-20', type: 'expense' },
-  ],
-};
-
-const STOCK_HOLDINGS: StockHolding[] = [
-  { symbol: '2330.TW', name: '台積電', shares: 100, avgCost: 580, category: 'Equity' },
-  { symbol: '2317.TW', name: '鴻海', shares: 200, avgCost: 148, category: 'Equity' },
-  { symbol: 'BTC-USD', name: 'Bitcoin ETF', shares: 50, avgCost: 42000, category: 'ETF' },
-];
-
-const CRYPTO_HOLDINGS: CryptoHolding[] = [
-  { id: 'bitcoin', symbol: 'BTC', name: 'Bitcoin', amount: 0.85, avgCost: 62000, category: 'Store of Value' },
-  { id: 'ethereum', symbol: 'ETH', name: 'Ethereum', amount: 4.2, avgCost: 2800, category: 'Layer 1' },
-  { id: 'solana', symbol: 'SOL', name: 'Solana', amount: 25, avgCost: 95, category: 'Layer 1' },
-];
-
-// ─── Conversion (display currency) ───────────────────────────────────────────
-function toUSD(value: number, currency: DisplayCurrency): number {
-  if (currency === 'USDC') return value;
-  if (currency === 'BTC') return value * FALLBACK_FX.BTC;
-  if (currency === 'ETH') return value * FALLBACK_FX.ETH;
-  if (currency === 'CNY') return value * TWD_PER_USD * FALLBACK_FX.CNY;
-  return value;
-}
-
-function fromUSD(usd: number, currency: DisplayCurrency): number {
-  if (currency === 'USDC') return usd;
-  if (currency === 'BTC') return usd / FALLBACK_FX.BTC;
-  if (currency === 'ETH') return usd / FALLBACK_FX.ETH;
-  if (currency === 'CNY') return usd * TWD_PER_USD * FALLBACK_FX.CNY;
-  return usd;
-}
-
-function formatDisplayCurrency(value: number, currency: DisplayCurrency, privacy: boolean): string {
-  if (privacy) return '••••••';
-  const sym = DISPLAY_CURRENCY_SYMBOLS[currency];
-  if (currency === 'BTC') return `${value.toFixed(5)} BTC`;
-  if (currency === 'ETH') return `${value.toFixed(4)} ETH`;
-  if (currency === 'CNY') return `¥${value.toLocaleString('zh-TW', { maximumFractionDigits: 0 })}`;
-  return `${sym}${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function formatCurrencyTWD(value: number, privacy: boolean): string {
-  if (privacy) return '••••••';
-  return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(value);
-}
-
-// ─── Donut Chart ──────────────────────────────────────────────────────────────
-const COLORS = ['#6366F1', '#10B981', '#F59E0B'];
-
-function DonutChart({ bankUSD, stockUSD, cryptoUSD, currency, privacy }: {
-  bankUSD: number; stockUSD: number; cryptoUSD: number;
-  currency: DisplayCurrency; privacy: boolean;
-}) {
-  const data = [
-    { name: '銀行存款', value: bankUSD, label: '銀行' },
-    { name: '股票', value: stockUSD, label: '股票' },
-    { name: '加密貨幣', value: cryptoUSD, label: '加密' },
+  const STOCK_HOLDINGS: StockHolding[] = [
+    { symbol: '2330.TW', name: '台積電', shares: 100, avgCost: 580, category: 'Equity' },
+    { symbol: '2317.TW', name: '鴻海', shares: 200, avgCost: 148, category: 'Equity' },
+    { symbol: 'BTC-USD', name: 'Bitcoin ETF', shares: 50, avgCost: 42000, category: 'ETF' },
   ];
-  const total = bankUSD + stockUSD + cryptoUSD;
 
-  return (
-    <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
-      <h2 className="text-base font-semibold text-white mb-4">📊 資產配置</h2>
-      <div className="flex items-center gap-6">
-        <ResponsiveContainer width={140} height={140}>
-          <PieChart>
-            <Pie data={data} cx="50%" cy="50%" innerRadius={40} outerRadius={65} paddingAngle={3} dataKey="value">
-              {data.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
-            </Pie>
-            <Tooltip
-              formatter={(v: unknown) => `$${((v as number) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`}
-              contentStyle={{ backgroundColor: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, color: '#e2e8f0' }}
-            />
-          </PieChart>
-        </ResponsiveContainer>
-        <div className="flex-1 space-y-3">
-          {data.map((d, i) => (
-            <div key={d.name} className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS[i] }} />
-              <span className="text-sm text-slate-400 flex-1">{d.label}</span>
-              <span className="text-sm font-semibold text-white">
-                {total > 0 ? ((d.value / total) * 100).toFixed(1) : '0.0'}%
-              </span>
-              <span className={`text-sm font-medium ${privacy ? 'blur-sm select-none' : 'text-slate-200'}`}>
-                {formatDisplayCurrency(fromUSD(d.value, currency), currency, false)}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
+  const CRYPTO_HOLDINGS: CryptoHolding[] = [
+    { id: 'bitcoin', symbol: 'BTC', name: 'Bitcoin', amount: 0.85, avgCost: 62000, category: 'Store of Value' },
+    { id: 'ethereum', symbol: 'ETH', name: 'Ethereum', amount: 4.2, avgCost: 2800, category: 'Layer 1' },
+    { id: 'solana', symbol: 'SOL', name: 'Solana', amount: 25, avgCost: 95, category: 'Layer 1' },
+  ];
 
-// ─── Currency Converter Panel ──────────────────────────────────────────────────
-function CurrencyConverterPanel() {
-  const [sourceCurrency, setSourceCurrency] = useState<Currency>('USD');
-  const [amount, setAmount] = useState<string>('100');
-  const [rates, setRates] = useState<Record<Currency, number>>({ USD: 1, TWD: 31.5, HKD: 7.82, JPY: 149.5, EUR: 0.92 });
-  const [loading, setLoading] = useState(true);
+  const initialStocks = STOCK_HOLDINGS.map(s => {
+    const priceData = stockPrices[s.symbol];
+    const currentPrice = priceData?.regularMarketPrice || s.avgCost;
+    const value = currentPrice * s.shares;
+    const cost = s.avgCost * s.shares;
+    const gain = value - cost;
+    const gainPercent = s.avgCost > 0 ? ((currentPrice - s.avgCost) / s.avgCost) * 100 : 0;
+    return { ...s, currentPrice, value, gain, gainPercent };
+  });
 
-  useEffect(() => {
-    const timeoutId = setTimeout(() => setLoading(false), 12000);
-    let isCancelled = false;
+  const initialCrypto = CRYPTO_HOLDINGS.map(c => {
+    const currentPrice = cryptoPrices[c.id]?.usd || c.avgCost;
+    const value = currentPrice * c.amount;
+    const cost = c.avgCost * c.amount;
+    const gain = value - cost;
+    const gainPercent = c.avgCost > 0 ? ((currentPrice - c.avgCost) / c.avgCost) * 100 : 0;
+    return { ...c, currentPrice, value, gain, gainPercent };
+  });
 
-    async function loadRates() {
-      try {
-        // Small delay to allow serverless cold-start to complete
-        await new Promise(r => setTimeout(r, 500));
-        if (isCancelled) return;
-        const base = typeof window !== 'undefined' ? window.location.origin : '';
-        const res = await fetch(`${base}/api/exchange-rate`);
-        if (isCancelled) return;
-        const data = await res.json() as { rates?: Record<Currency, number> };
-        if (isCancelled) return;
-        if (data.rates) setRates(data.rates);
-      } catch {
-        // keep fallback
-      } finally {
-        if (!isCancelled) {
-          clearTimeout(timeoutId);
-          setLoading(false);
-        }
-      }
-    }
-
-    loadRates();
-    return () => { isCancelled = true; clearTimeout(timeoutId); };
-  }, []);
-
-  const amountNum = parseFloat(amount) || 0;
-
-  return (
-    <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
-      <h2 className="text-base font-semibold text-white mb-4">💱 幣別換算</h2>
-
-      {/* Source currency + amount */}
-      <div className="flex gap-3 mb-5">
-        <select
-          value={sourceCurrency}
-          onChange={e => setSourceCurrency(e.target.value as Currency)}
-          className="px-3 py-2.5 rounded-xl bg-white/10 border border-white/10 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          {CURRENCIES.map(c => (
-            <option key={c} value={c}>{CURRENCY_NAMES[c]} ({CURRENCY_SYMBOLS[c]})</option>
-          ))}
-        </select>
-        <input
-          type="number"
-          value={amount}
-          onChange={e => setAmount(e.target.value)}
-          placeholder="輸入金額"
-          className="flex-1 px-3 py-2.5 rounded-xl bg-white/10 border border-white/10 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        />
-      </div>
-
-      {/* Results */}
-      <div className="space-y-2">
-        {CURRENCIES.map(curr => {
-          const rate = rates[curr] || 1;
-          const rateFromSource = rate / (rates[sourceCurrency] || 1);
-          const converted = amountNum * rateFromSource;
-          const sym = CURRENCY_SYMBOLS[curr];
-          const dec = CURRENCY_DECIMALS[curr];
-          const isSource = curr === sourceCurrency;
-          return (
-            <div key={curr} className={`flex items-center justify-between px-3 py-2 rounded-xl ${isSource ? 'bg-indigo-600/20 border border-indigo-500/30' : 'bg-white/5'}`}>
-              <div className="flex items-center gap-2">
-                <span className="text-base font-semibold text-white w-8 text-center">{sym}</span>
-                <span className="text-sm text-slate-400">{CURRENCY_NAMES[curr]}</span>
-              </div>
-              <span className={`font-semibold ${isSource ? 'text-indigo-300' : 'text-white'}`}>
-                {loading ? '...' : converted.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec })}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-
-      <p className="text-xs text-slate-500 mt-3 text-right">
-        {loading ? '匯率載入中...' : `1 ${CURRENCY_NAMES[sourceCurrency]} = ${(rates.TWD / (rates[sourceCurrency] || 1)).toFixed(4)} TWD`}
-      </p>
-    </div>
-  );
-}
-
-// ─── Main Dashboard ────────────────────────────────────────────────────────────
-export default function Dashboard() {
-  const [stocks, setStocks] = useState<StockHolding[]>(STOCK_HOLDINGS);
-  const [crypto, setCrypto] = useState<CryptoHolding[]>(CRYPTO_HOLDINGS);
-  const [loading, setLoading] = useState(true);
-  const [currency, setCurrency] = useState<DisplayCurrency>('USDC');
-  const [privacy, setPrivacy] = useState(false);
-
-  // Load preferences
-  useEffect(() => {
-    const saved = localStorage.getItem('wealth_currency') as DisplayCurrency | null;
-    if (saved && ['USDC', 'BTC', 'ETH', 'CNY'].includes(saved)) setCurrency(saved);
-    setPrivacy(localStorage.getItem('wealth_privacy') === 'true');
-  }, []);
-
-  // Keyboard shortcut: Ctrl+H
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key.toLowerCase() === 'h') {
-        e.preventDefault();
-        setPrivacy(v => {
-          const next = !v;
-          localStorage.setItem('wealth_privacy', String(next));
-          return next;
-        });
-      }
-    };
-    addEventListener('keydown', handler);
-    return () => removeEventListener('keydown', handler);
-  }, []);
-
-  // Fetch prices — absolute URL + cold-start delay for Vercel serverless compatibility
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      // Safety: if loading not cleared after 15s, force-clear it
-      setLoading(false);
-    }, 15000);
-    let isCancelled = false;
-    const BASE = window.location.origin;
-
-    async function doFetch() {
-      let stockOk = false, cryptoOk = false;
-      try {
-        // Cold-start delay: give Vercel serverless function time to initialize
-        await new Promise(r => setTimeout(r, 1500));
-        if (isCancelled) return;
-
-        const [stockRes, cryptoRes] = await Promise.all([
-          fetch(`${BASE}/api/stocks`),
-          fetch(`${BASE}/api/crypto`),
-        ]);
-
-        if (isCancelled) return;
-        if (!stockRes.ok) throw new Error(`stocks HTTP ${stockRes.status}`);
-        if (!cryptoRes.ok) throw new Error(`crypto HTTP ${cryptoRes.status}`);
-        stockOk = cryptoOk = true;
-
-        const [stockData, cryptoData] = await Promise.all([
-          stockRes.json() as Promise<{ prices?: Record<string, { regularMarketPrice?: number }> }>,
-          cryptoRes.json() as Promise<{ prices?: Record<string, { usd?: number }> }>,
-        ]);
-
-        if (isCancelled) return;
-
-        if (stockData.prices) {
-          setStocks(STOCK_HOLDINGS.map(s => {
-            const priceData = stockData.prices?.[s.symbol];
-            const currentPrice = priceData?.regularMarketPrice || s.avgCost;
-            const value = currentPrice * s.shares;
-            const cost = s.avgCost * s.shares;
-            const gain = value - cost;
-            const gainPercent = s.avgCost > 0 ? ((currentPrice - s.avgCost) / s.avgCost) * 100 : 0;
-            return { ...s, currentPrice, value, gain, gainPercent };
-          }));
-        }
-
-        if (cryptoData.prices) {
-          setCrypto(CRYPTO_HOLDINGS.map(c => {
-            const currentPrice = cryptoData.prices?.[c.id]?.usd || c.avgCost;
-            const value = currentPrice * c.amount;
-            const cost = c.avgCost * c.amount;
-            const gain = value - cost;
-            const gainPercent = c.avgCost > 0 ? ((currentPrice - c.avgCost) / c.avgCost) * 100 : 0;
-            return { ...c, currentPrice, value, gain, gainPercent };
-          }));
-        }
-      } catch (err) {
-        console.error('Price fetch error:', err, '| stockOk:', stockOk, '| cryptoOk:', cryptoOk);
-      } finally {
-        if (!isCancelled) {
-          clearTimeout(timeoutId);
-          setLoading(false);
-        }
-      }
-    }
-
-    doFetch();
-    return () => { isCancelled = true; clearTimeout(timeoutId); };
-  }, []);
-
-  const bankUSD = MOCK_BANK.balance / TWD_PER_USD;
-  const stockUSD = stocks.reduce((s, st) => s + (st.value || 0), 0);
-  const cryptoUSD = crypto.reduce((s, c) => s + (c.value || 0), 0);
-  const totalUSD = bankUSD + stockUSD + cryptoUSD;
-  const totalDisplay = fromUSD(totalUSD, currency);
-  const totalTWD = totalUSD * TWD_PER_USD;
-  const totalWan = (totalTWD / 10000).toFixed(1);
-
-  const fmt = useCallback((v: number) => formatDisplayCurrency(v, currency, privacy), [currency, privacy]);
-  const fmtTWD = useCallback((v: number) => formatCurrencyTWD(v, privacy), [privacy]);
-
-  const toggleCurrency = (c: DisplayCurrency) => {
-    setCurrency(c);
-    localStorage.setItem('wealth_currency', c);
-  };
-
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      {/* Header */}
-      <header className="border-b border-white/10 bg-slate-950/80 backdrop-blur sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 py-5 sm:px-6 lg:px-8">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-300">
-                Live Wealth OS · Updated {new Date().toISOString().split('T')[0]}
-              </div>
-              <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Wealth Dashboard</h1>
-              <p className="mt-2 max-w-2xl text-sm text-slate-400">
-                整合銀行、證券、加密資產的個人資產中心。
-              </p>
-            </div>
-
-            {/* Controls */}
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex bg-white/5 border border-white/10 rounded-xl p-1 gap-1">
-                {(['USDC', 'BTC', 'ETH', 'CNY'] as DisplayCurrency[]).map(c => (
-                  <button
-                    key={c}
-                    onClick={() => toggleCurrency(c)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                      currency === c ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {c}
-                  </button>
-                ))}
-              </div>
-
-              <button
-                onClick={() => setPrivacy(v => { const next = !v; localStorage.setItem('wealth_privacy', String(next)); return next; })}
-                className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-sm transition-colors"
-                title={privacy ? '顯示金額 (Ctrl+H)' : '隱藏金額 (Ctrl+H)'}
-              >
-                {privacy ? '🙈' : '👁️'}
-              </button>
-
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">總淨資產</p>
-                <p className={`mt-1 text-2xl font-bold text-white ${privacy ? 'blur-sm select-none' : ''}`}>
-                  {loading ? '...' : `${totalTWD >= 10000 ? `${(totalTWD / 10000).toLocaleString('zh-TW', { maximumFractionDigits: 1 })}萬 TWD` : totalTWD.toLocaleString('zh-TW', { maximumFractionDigits: 0 })}`}
-                </p>
-                {totalUSD > 0 && (
-                  <p className={`mt-0.5 text-sm font-medium text-slate-400 ${privacy ? 'blur-sm select-none' : ''}`}>
-                    {loading ? '' : `≈ ${fmt(totalUSD)} USD`}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8 space-y-8">
-        {/* Membership + Account Linking */}
-        <section className="grid gap-4 lg:grid-cols-3">
-          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 to-slate-800 p-6 lg:col-span-2">
-            <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Membership</p>
-            <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-2xl font-semibold">Gold Member</h2>
-                <p className="mt-1 text-sm text-slate-400">帳戶整合、分類視圖與進階資產追蹤已啟用。</p>
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="rounded-2xl bg-white/5 px-4 py-3">
-                  登入狀態<br /><span className="text-emerald-300 font-semibold">Authenticated</span>
-                </div>
-                <div className="rounded-2xl bg-white/5 px-4 py-3">
-                  方案<br /><span className="text-amber-300 font-semibold">Premium</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
-            <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Account Linking</p>
-            <div className="mt-4 space-y-3 text-sm text-slate-300">
-              <div className="flex items-center justify-between"><span>Bank</span><span className="text-emerald-300">Connected</span></div>
-              <div className="flex items-center justify-between"><span>Brokerage</span><span className="text-emerald-300">Connected</span></div>
-              <div className="flex items-center justify-between"><span>Crypto</span><span className="text-emerald-300">Connected</span></div>
-            </div>
-          </div>
-        </section>
-
-        {/* Asset Cards */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <BankCard bank={MOCK_BANK} formatCurrency={fmtTWD} />
-          <StockCard holdings={stocks} total={fromUSD(stockUSD, currency)} currency={currency} privacy={privacy} loading={loading} formatCurrency={fmt} />
-          <CryptoCard holdings={crypto} total={fromUSD(cryptoUSD, currency)} currency={currency} privacy={privacy} loading={loading} formatCurrency={fmt} />
-        </div>
-
-        {/* Donut Chart + Currency Converter */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <DonutChart bankUSD={bankUSD} stockUSD={stockUSD} cryptoUSD={cryptoUSD} currency={currency} privacy={privacy} />
-          <CurrencyConverterPanel />
-        </div>
-      </main>
-
-      <footer className="border-t border-white/10 bg-slate-950 mt-8">
-        <div className="max-w-7xl mx-auto px-4 py-4 text-center text-xs text-slate-500 sm:px-6 lg:px-8">
-          Wealth Dashboard MVP · 報價僅供參考，不構成投資建議 · Ctrl+H 隱藏金額
-        </div>
-      </footer>
-    </div>
-  );
+  return <DashboardClient initialStocks={initialStocks} initialCrypto={initialCrypto} />;
 }
