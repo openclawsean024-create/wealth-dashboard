@@ -382,11 +382,11 @@ export default function Dashboard() {
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-400">總淨資產</p>
                 <p className={`mt-1 text-2xl font-bold text-white ${privacy ? 'blur-sm select-none' : ''}`}>
-                  {loading ? '...' : fmt(totalDisplay)}
+                  {loading ? '...' : `${totalTWD >= 10000 ? `${(totalTWD / 10000).toLocaleString('zh-TW', { maximumFractionDigits: 1 })}萬 TWD` : totalTWD.toLocaleString('zh-TW', { maximumFractionDigits: 0 })}`}
                 </p>
-                {totalTWD > 0 && (
+                {totalUSD > 0 && (
                   <p className={`mt-0.5 text-sm font-medium text-slate-400 ${privacy ? 'blur-sm select-none' : ''}`}>
-                    {loading ? '' : `${totalWan}萬 TWD`}
+                    {loading ? '' : `≈ ${fmt(totalUSD)} USD`}
                   </p>
                 )}
               </div>
