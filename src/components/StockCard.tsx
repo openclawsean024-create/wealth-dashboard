@@ -54,7 +54,7 @@ export default function StockCard({ holdings, total, currency, privacy, loading,
             {holdings.map((stock) => (
               <div key={stock.symbol} className="flex items-center justify-between gap-3 text-sm">
                 <div>
-                  <p className="font-medium text-white">{stock.name}</p>
+                  <p className="font-medium text-white">{stock.name} ({stock.symbol})</p>
                   <p className="text-slate-500 text-xs">
                     {getStockCategory(stock.symbol)} · {stock.shares} 股 @{' '}
                     {loading ? '...' : formatCurrency(stock.currentPrice || 0)}
