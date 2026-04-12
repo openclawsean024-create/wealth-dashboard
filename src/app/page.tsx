@@ -241,7 +241,7 @@ function CurrencyConverterPanel() {
                 <span className="text-sm text-slate-400">{CURRENCY_NAMES[curr]}</span>
               </div>
               <span className={`font-semibold ${isSource ? 'text-indigo-300' : 'text-white'}`}>
-                {loading && curr === 'TWD' ? '...' : converted.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec })}
+                {loading ? '...' : converted.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec })}
               </span>
             </div>
           );
@@ -319,10 +319,8 @@ export default function Dashboard() {
           }));
         }
       } catch (e) { console.error('Crypto fetch error', e); }
-
-      setLoading(false);
     }
-    fetchData();
+    fetchData().finally(() => setLoading(false));
   }, []);
 
   const bankUSD = MOCK_BANK.balance / TWD_PER_USD;
