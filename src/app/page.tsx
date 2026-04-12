@@ -185,18 +185,28 @@ function CurrencyConverterPanel() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const timeoutId = setTimeout(() => setLoading(false), 10000);
+    let isCancelled = false;
+
     async function loadRates() {
       try {
         const res = await fetch('/api/exchange-rate');
+        if (isCancelled) return;
         const data = await res.json() as { rates?: Record<Currency, number> };
+        if (isCancelled) return;
         if (data.rates) setRates(data.rates);
       } catch {
         // keep fallback
       } finally {
-        setLoading(false);
+        if (!isCancelled) {
+          clearTimeout(timeoutId);
+          setLoading(false);
+        }
       }
     }
+
     loadRates();
+    return () => { isCancelled = true; clearTimeout(timeoutId); };
   }, []);
 
   const amountNum = parseFloat(amount) || 0;
@@ -286,70 +296,62 @@ export default function Dashboard() {
     return () => removeEventListener('keydown', handler);
   }, []);
 
-  // Fetch prices — Promise.allSettled ensures setLoading(false) always runs
+  // Fetch prices — ref-based cleanup ensures setLoading(false) always fires
   useEffect(() => {
-    let cancelled = false;
-    const TIMEOUT_MS = 10000;
+    const timeoutId = setTimeout(() => setLoading(false), 12000);
+    let isCancelled = false;
 
-    async function fetchWithTimeout<T>(url: string, ms: number): Promise<T> {
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), ms);
+    async function doFetch() {
       try {
-        const res = await fetch(url, { signal: controller.signal as AbortSignal });
-        clearTimeout(id);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return await res.json() as T;
-      } catch (e) {
-        clearTimeout(id);
-        throw e;
+        // Fetch both in parallel
+        const [stockRes, cryptoRes] = await Promise.all([
+          fetch('/api/stocks'),
+          fetch('/api/crypto'),
+        ]);
+
+        if (isCancelled) return;
+
+        const [stockData, cryptoData] = await Promise.all([
+          stockRes.json() as Promise<{ prices?: Record<string, { regularMarketPrice?: number }> }>,
+          cryptoRes.json() as Promise<{ prices?: Record<string, { usd?: number }> }>,
+        ]);
+
+        if (isCancelled) return;
+
+        if (stockData.prices) {
+          setStocks(STOCK_HOLDINGS.map(s => {
+            const priceData = stockData.prices?.[s.symbol];
+            const currentPrice = priceData?.regularMarketPrice || s.avgCost;
+            const value = currentPrice * s.shares;
+            const cost = s.avgCost * s.shares;
+            const gain = value - cost;
+            const gainPercent = s.avgCost > 0 ? ((currentPrice - s.avgCost) / s.avgCost) * 100 : 0;
+            return { ...s, currentPrice, value, gain, gainPercent };
+          }));
+        }
+
+        if (cryptoData.prices) {
+          setCrypto(CRYPTO_HOLDINGS.map(c => {
+            const currentPrice = cryptoData.prices?.[c.id]?.usd || c.avgCost;
+            const value = currentPrice * c.amount;
+            const cost = c.avgCost * c.amount;
+            const gain = value - cost;
+            const gainPercent = c.avgCost > 0 ? ((currentPrice - c.avgCost) / c.avgCost) * 100 : 0;
+            return { ...c, currentPrice, value, gain, gainPercent };
+          }));
+        }
+      } catch (err) {
+        console.error('Price fetch error:', err);
+      } finally {
+        if (!isCancelled) {
+          clearTimeout(timeoutId);
+          setLoading(false);
+        }
       }
     }
 
-    async function fetchData() {
-      const results = await Promise.allSettled([
-        fetchWithTimeout<{ prices?: Record<string, { regularMarketPrice?: number }> }>('/api/stocks', TIMEOUT_MS),
-        fetchWithTimeout<{ prices?: Record<string, { usd?: number }> }>('/api/crypto', TIMEOUT_MS),
-      ]);
-
-      if (cancelled) return;
-
-      const [stockResult, cryptoResult] = results;
-
-      if (stockResult.status === 'fulfilled' && stockResult.value.prices) {
-        const stockData = stockResult.value.prices;
-        setStocks(STOCK_HOLDINGS.map(s => {
-          const priceData = stockData[s.symbol];
-          const currentPrice = priceData?.regularMarketPrice || s.avgCost;
-          const value = currentPrice * s.shares;
-          const cost = s.avgCost * s.shares;
-          const gain = value - cost;
-          const gainPercent = s.avgCost > 0 ? ((currentPrice - s.avgCost) / s.avgCost) * 100 : 0;
-          return { ...s, currentPrice, value, gain, gainPercent };
-        }));
-      } else {
-        console.error('Stocks fetch failed:', stockResult.status === 'rejected' ? stockResult.reason : 'no data');
-      }
-
-      if (cryptoResult.status === 'fulfilled' && cryptoResult.value.prices) {
-        const cryptoData = cryptoResult.value.prices;
-        setCrypto(CRYPTO_HOLDINGS.map(c => {
-          const currentPrice = cryptoData[c.id]?.usd || c.avgCost;
-          const value = currentPrice * c.amount;
-          const cost = c.avgCost * c.amount;
-          const gain = value - cost;
-          const gainPercent = c.avgCost > 0 ? ((currentPrice - c.avgCost) / c.avgCost) * 100 : 0;
-          return { ...c, currentPrice, value, gain, gainPercent };
-        }));
-      } else {
-        console.error('Crypto fetch failed:', cryptoResult.status === 'rejected' ? cryptoResult.reason : 'no data');
-      }
-    }
-
-    fetchData().then(() => {}).catch(() => {}).finally(() => {
-      if (!cancelled) setLoading(false);
-    });
-
-    return () => { cancelled = true; };
+    doFetch();
+    return () => { isCancelled = true; clearTimeout(timeoutId); };
   }, []);
 
   const bankUSD = MOCK_BANK.balance / TWD_PER_USD;
