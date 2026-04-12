@@ -185,12 +185,16 @@ function CurrencyConverterPanel() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const timeoutId = setTimeout(() => setLoading(false), 10000);
+    const timeoutId = setTimeout(() => setLoading(false), 12000);
     let isCancelled = false;
 
     async function loadRates() {
       try {
-        const res = await fetch('/api/exchange-rate');
+        // Small delay to allow serverless cold-start to complete
+        await new Promise(r => setTimeout(r, 500));
+        if (isCancelled) return;
+        const base = typeof window !== 'undefined' ? window.location.origin : '';
+        const res = await fetch(`${base}/api/exchange-rate`);
         if (isCancelled) return;
         const data = await res.json() as { rates?: Record<Currency, number> };
         if (isCancelled) return;
@@ -296,17 +300,21 @@ export default function Dashboard() {
     return () => removeEventListener('keydown', handler);
   }, []);
 
-  // Fetch prices — ref-based cleanup ensures setLoading(false) always fires
+  // Fetch prices — absolute URL + cold-start delay ensures Vercel serverless compatibility
   useEffect(() => {
-    const timeoutId = setTimeout(() => setLoading(false), 12000);
+    const timeoutId = setTimeout(() => setLoading(false), 15000);
     let isCancelled = false;
+    const BASE = typeof window !== 'undefined' ? window.location.origin : '';
 
     async function doFetch() {
       try {
-        // Fetch both in parallel
+        // Delay to allow Vercel serverless cold-start to complete
+        await new Promise(r => setTimeout(r, 1000));
+        if (isCancelled) return;
+
         const [stockRes, cryptoRes] = await Promise.all([
-          fetch('/api/stocks'),
-          fetch('/api/crypto'),
+          fetch(`${BASE}/api/stocks`),
+          fetch(`${BASE}/api/crypto`),
         ]);
 
         if (isCancelled) return;
