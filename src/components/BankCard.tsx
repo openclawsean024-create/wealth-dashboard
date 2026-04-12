@@ -15,7 +15,7 @@ interface BankCardProps {
     syncTime: string;
     transactions: Transaction[];
   };
-  formatCurrency: (value: number, currency?: string) => string;
+  formatCurrency: (value: number) => string;
 }
 
 export default function BankCard({ bank, formatCurrency }: BankCardProps) {
@@ -35,13 +35,13 @@ export default function BankCard({ bank, formatCurrency }: BankCardProps) {
       <div className="p-6 space-y-4">
         <div>
           <p className="text-xs uppercase tracking-[0.25em] text-slate-400">帳戶餘額</p>
-          <p className="mt-2 text-3xl font-bold text-white">{formatCurrency(bank.balance, bank.currency)}</p>
+          <p className="mt-2 text-3xl font-bold text-white">{formatCurrency(bank.balance)}</p>
         </div>
 
         <div className="grid grid-cols-2 gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm text-slate-300">
           <div>
             <p className="text-slate-500 text-xs uppercase tracking-[0.2em]">Link</p>
-            <p className="mt-1 font-medium text-emerald-300">已連結 Plaid</p>
+            <p className="mt-1 font-medium text-emerald-300">已連結</p>
           </div>
           <div className="text-right">
             <p className="text-slate-500 text-xs uppercase tracking-[0.2em]">Sync</p>

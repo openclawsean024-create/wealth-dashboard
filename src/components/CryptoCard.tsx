@@ -1,3 +1,5 @@
+type Currency = 'USDC' | 'BTC' | 'ETH' | 'CNY';
+
 interface CryptoHolding {
   id: string;
   symbol: string;
@@ -14,11 +16,13 @@ interface CryptoHolding {
 interface CryptoCardProps {
   holdings: CryptoHolding[];
   total: number;
+  currency: Currency;
+  privacy: boolean;
   loading: boolean;
-  formatCurrency: (value: number, currency?: string) => string;
+  formatCurrency: (value: number) => string;
 }
 
-export default function CryptoCard({ holdings, total, loading, formatCurrency }: CryptoCardProps) {
+export default function CryptoCard({ holdings, total, currency, privacy, loading, formatCurrency }: CryptoCardProps) {
   return (
     <div className="rounded-3xl border border-white/10 bg-white/5 overflow-hidden">
       <div className="bg-gradient-to-r from-amber-500/80 to-orange-500/80 px-6 py-5">
@@ -34,9 +38,10 @@ export default function CryptoCard({ holdings, total, loading, formatCurrency }:
       <div className="p-6">
         <div className="mb-4">
           <p className="text-xs uppercase tracking-[0.25em] text-slate-400">總市值</p>
-          <p className="mt-2 text-3xl font-bold text-white">
+          <p className={`mt-2 text-3xl font-bold text-white ${privacy ? 'blur-sm select-none' : ''}`}>
             {loading ? <span className="text-slate-500">載入中...</span> : formatCurrency(total)}
           </p>
+          <p className="text-xs text-slate-500 mt-1">計價：{currency}</p>
         </div>
 
         <div className="border-t border-white/10 pt-4">
@@ -51,7 +56,7 @@ export default function CryptoCard({ holdings, total, loading, formatCurrency }:
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="font-medium text-white">
+                  <p className={`font-medium text-white ${privacy ? 'blur-sm select-none' : ''}`}>
                     {loading ? '...' : formatCurrency(coin.value || 0)}
                   </p>
                   {!loading && coin.gain !== undefined && (

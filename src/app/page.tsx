@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import BankCard from '@/components/BankCard';
 import StockCard from '@/components/StockCard';
 import CryptoCard from '@/components/CryptoCard';
 
+// ─── Types ───────────────────────────────────────────────────────────────────
 interface StockHolding {
   symbol: string;
   name: string;
@@ -14,6 +16,7 @@ interface StockHolding {
   value?: number;
   gain?: number;
   gainPercent?: number;
+  category?: string;
 }
 
 interface CryptoHolding {
@@ -29,6 +32,12 @@ interface CryptoHolding {
   category?: string;
 }
 
+// ─── FX Constants ─────────────────────────────────────────────────────────────
+type Currency = 'USDC' | 'BTC' | 'ETH' | 'CNY';
+const FX = { USDC: 1, BTC: 67000, ETH: 3500, CNY: 7.25 };
+const TWD_PER_USD = 32.5;
+
+// ─── Static Data ─────────────────────────────────────────────────────────────
 const MOCK_BANK = {
   name: '玉山銀行 (ESun)',
   accountType: '數位帳戶',
@@ -43,9 +52,9 @@ const MOCK_BANK = {
 };
 
 const STOCK_HOLDINGS: StockHolding[] = [
-  { symbol: '2330.TW', name: '台積電', shares: 100, avgCost: 580 },
-  { symbol: '2317.TW', name: '鴻海', shares: 200, avgCost: 148 },
-  { symbol: 'BTC-USD', name: 'Bitcoin ETF', shares: 50, avgCost: 42000 },
+  { symbol: '2330.TW', name: '台積電', shares: 100, avgCost: 580, category: 'Equity' },
+  { symbol: '2317.TW', name: '鴻海', shares: 200, avgCost: 148, category: 'Equity' },
+  { symbol: 'BTC-USD', name: 'Bitcoin ETF', shares: 50, avgCost: 42000, category: 'ETF' },
 ];
 
 const CRYPTO_HOLDINGS: CryptoHolding[] = [
@@ -54,77 +63,184 @@ const CRYPTO_HOLDINGS: CryptoHolding[] = [
   { id: 'solana', symbol: 'SOL', name: 'Solana', amount: 25, avgCost: 95, category: 'Layer 1' },
 ];
 
+// ─── Currency Conversion ──────────────────────────────────────────────────────
+function toUSD(value: number, currency: Currency): number {
+  if (currency === 'USDC') return value;
+  if (currency === 'BTC') return value * FX.BTC;
+  if (currency === 'ETH') return value * FX.ETH;
+  if (currency === 'CNY') return value * TWD_PER_USD * FX.CNY;
+  return value;
+}
+
+function fromUSD(usd: number, currency: Currency): number {
+  if (currency === 'USDC') return usd;
+  if (currency === 'BTC') return usd / FX.BTC;
+  if (currency === 'ETH') return usd / FX.ETH;
+  if (currency === 'CNY') return usd * TWD_PER_USD * FX.CNY;
+  return usd;
+}
+
+function formatCurrency(value: number, currency: Currency, privacy: boolean): string {
+  if (privacy) return '••••••';
+  if (currency === 'BTC') return `${value.toFixed(5)} BTC`;
+  if (currency === 'ETH') return `${value.toFixed(4)} ETH`;
+  if (currency === 'CNY') return `¥${value.toLocaleString('zh-TW', { maximumFractionDigits: 0 })}`;
+  return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC`;
+}
+
+function formatCurrencyTWD(value: number, privacy: boolean): string {
+  if (privacy) return '••••••';
+  return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(value);
+}
+
+// ─── Donut Chart ──────────────────────────────────────────────────────────────
+const COLORS = ['#6366F1', '#10B981', '#F59E0B'];
+
+function DonutChart({ bankUSD, stockUSD, cryptoUSD, currency, privacy }: {
+  bankUSD: number; stockUSD: number; cryptoUSD: number;
+  currency: Currency; privacy: boolean;
+}) {
+  const data = [
+    { name: '銀行存款', value: bankUSD, label: '銀行' },
+    { name: '股票', value: stockUSD, label: '股票' },
+    { name: '加密貨幣', value: cryptoUSD, label: '加密' },
+  ];
+
+  const total = bankUSD + stockUSD + cryptoUSD;
+
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+      <h2 className="text-base font-semibold text-white mb-4">📊 資產配置</h2>
+      <div className="flex items-center gap-6">
+        <ResponsiveContainer width={140} height={140}>
+          <PieChart>
+            <Pie
+              data={data}
+              cx="50%"
+              cy="50%"
+              innerRadius={40}
+              outerRadius={65}
+              paddingAngle={3}
+              dataKey="value"
+            >
+              {data.map((_, i) => (
+                <Cell key={i} fill={COLORS[i]} />
+              ))}
+            </Pie>
+            <Tooltip
+              formatter={(v: unknown) => `$${((v as number) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`}
+              contentStyle={{ backgroundColor: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, color: '#e2e8f0' }}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="flex-1 space-y-3">
+          {data.map((d, i) => (
+            <div key={d.name} className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS[i] }} />
+              <span className="text-sm text-slate-400 flex-1">{d.label}</span>
+              <span className="text-sm font-semibold text-white">
+                {total > 0 ? ((d.value / total) * 100).toFixed(1) : '0.0'}%
+              </span>
+              <span className={`text-sm font-medium ${privacy ? 'blur-sm select-none' : 'text-slate-200'}`}>
+                {formatCurrency(fromUSD(d.value, currency), currency, false)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const [stocks, setStocks] = useState<StockHolding[]>(STOCK_HOLDINGS);
   const [crypto, setCrypto] = useState<CryptoHolding[]>(CRYPTO_HOLDINGS);
   const [loading, setLoading] = useState(true);
-  const [totalNetWorth, setTotalNetWorth] = useState(0);
+  const [currency, setCurrency] = useState<Currency>('USDC');
+  const [privacy, setPrivacy] = useState(false);
   const [lastSync, setLastSync] = useState('');
 
+  // Load preferences
   useEffect(() => {
+    const saved = localStorage.getItem('wealth_currency') as Currency | null;
+    if (saved && ['USDC', 'BTC', 'ETH', 'CNY'].includes(saved)) setCurrency(saved);
+    setPrivacy(localStorage.getItem('wealth_privacy') === 'true');
     const now = new Date();
     setLastSync(
       `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
     );
+  }, []);
 
+  // Keyboard shortcut: Ctrl+H for privacy
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        setPrivacy(v => {
+          const next = !v;
+          localStorage.setItem('wealth_privacy', String(next));
+          return next;
+        });
+      }
+    };
+    addEventListener('keydown', handler);
+    return () => removeEventListener('keydown', handler);
+  }, []);
+
+  // Fetch prices
+  useEffect(() => {
     async function fetchData() {
       try {
         const stockRes = await fetch('/api/stocks');
         const stockData = await stockRes.json() as { prices?: Record<string, number> };
         if (stockData.prices) {
-          const updated = STOCK_HOLDINGS.map((s) => {
+          setStocks(STOCK_HOLDINGS.map(s => {
             const currentPrice = (stockData.prices?.[s.symbol] as number) || s.avgCost;
             const value = currentPrice * s.shares;
             const cost = s.avgCost * s.shares;
             const gain = value - cost;
             const gainPercent = s.avgCost > 0 ? ((currentPrice - s.avgCost) / s.avgCost) * 100 : 0;
             return { ...s, currentPrice, value, gain, gainPercent };
-          });
-          setStocks(updated);
+          }));
         }
-      } catch (e) {
-        console.error('Stocks fetch error', e);
-      }
+      } catch (e) { console.error('Stocks fetch error', e); }
 
       try {
         const cryptoRes = await fetch('/api/crypto');
         const cryptoData = await cryptoRes.json() as { prices?: Record<string, { usd?: number }> };
         if (cryptoData.prices) {
-          const updated = CRYPTO_HOLDINGS.map((c) => {
+          setCrypto(CRYPTO_HOLDINGS.map(c => {
             const currentPrice = cryptoData.prices?.[c.id]?.usd || c.avgCost;
             const value = currentPrice * c.amount;
             const cost = c.avgCost * c.amount;
             const gain = value - cost;
             const gainPercent = c.avgCost > 0 ? ((currentPrice - c.avgCost) / c.avgCost) * 100 : 0;
             return { ...c, currentPrice, value, gain, gainPercent };
-          });
-          setCrypto(updated);
+          }));
         }
-      } catch (e) {
-        console.error('Crypto fetch error', e);
-      }
+      } catch (e) { console.error('Crypto fetch error', e); }
 
       setLoading(false);
     }
     fetchData();
   }, []);
 
-  useEffect(() => {
-    const bankTotal = MOCK_BANK.balance;
-    const stockTotal = stocks.reduce((sum, s) => sum + (s.value || 0), 0);
-    const cryptoTotal = crypto.reduce((sum, c) => sum + (c.value || 0), 0);
-    setTotalNetWorth(bankTotal + stockTotal + cryptoTotal);
-  }, [stocks, crypto]);
+  // ─── Computed Values (all in USD) ────────────────────────────────────────────
+  const bankUSD = MOCK_BANK.balance / TWD_PER_USD;
+  const stockUSD = stocks.reduce((s, st) => s + (st.value || 0), 0);
+  const cryptoUSD = crypto.reduce((s, c) => s + (c.value || 0), 0);
+  const totalUSD = bankUSD + stockUSD + cryptoUSD;
+  const totalDisplay = fromUSD(totalUSD, currency);
 
-  const formatCurrency = (value: number, currency = 'TWD') => {
-    if (currency === 'TWD') {
-      return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(value);
-    }
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(value);
+  // Format functions that respect currency + privacy
+  const fmt = useCallback((v: number) => formatCurrency(v, currency, privacy), [currency, privacy]);
+  const fmtTWD = useCallback((v: number) => formatCurrencyTWD(v, privacy), [privacy]);
+
+  const toggleCurrency = (c: Currency) => {
+    setCurrency(c);
+    localStorage.setItem('wealth_currency', c);
   };
-
-  const stockTotal = stocks.reduce((sum, s) => sum + (s.value || 0), 0);
-  const cryptoTotal = crypto.reduce((sum, c) => sum + (c.value || 0), 0);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -138,17 +254,51 @@ export default function Dashboard() {
               </div>
               <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Wealth Dashboard</h1>
               <p className="mt-2 max-w-2xl text-sm text-slate-400">
-                整合銀行、證券、加密資產與會員系統的個人資產中心。
+                整合銀行、證券、加密資產的個人資產中心。
               </p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-              <p className="text-xs uppercase tracking-[0.25em] text-slate-400">總淨資產</p>
-              <p className="mt-2 text-3xl font-bold text-white">
-                {loading ? '...' : formatCurrency(totalNetWorth)}
-              </p>
-              <p className="mt-1 text-xs text-slate-400">
-                已連結 Plaid · Sync {lastSync}
-              </p>
+
+            {/* Controls: Currency + Privacy */}
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Currency Selector */}
+              <div className="flex bg-white/5 border border-white/10 rounded-xl p-1 gap-1">
+                {(['USDC', 'BTC', 'ETH', 'CNY'] as Currency[]).map(c => (
+                  <button
+                    key={c}
+                    onClick={() => toggleCurrency(c)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                      currency === c
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+
+              {/* Privacy Button */}
+              <button
+                onClick={() => {
+                  setPrivacy(v => {
+                    const next = !v;
+                    localStorage.setItem('wealth_privacy', String(next));
+                    return next;
+                  });
+                }}
+                className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-sm transition-colors"
+                title={privacy ? '顯示金額 (Ctrl+H)' : '隱藏金額 (Ctrl+H)'}
+              >
+                {privacy ? '🙈' : '👁️'}
+              </button>
+
+              {/* Net Worth in Header */}
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">總淨資產</p>
+                <p className={`mt-1 text-2xl font-bold text-white ${privacy ? 'blur-sm select-none' : ''}`}>
+                  {loading ? '...' : fmt(totalDisplay)}
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -199,37 +349,53 @@ export default function Dashboard() {
 
         {/* Asset Cards */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <BankCard bank={MOCK_BANK} formatCurrency={formatCurrency} />
-          <StockCard holdings={stocks} total={stockTotal} loading={loading} formatCurrency={formatCurrency} />
-          <CryptoCard holdings={crypto} total={cryptoTotal} loading={loading} formatCurrency={formatCurrency} />
+          <BankCard bank={MOCK_BANK} formatCurrency={fmtTWD} />
+          <StockCard holdings={stocks} total={fromUSD(stockUSD, currency)} currency={currency} privacy={privacy} loading={loading} formatCurrency={fmt} />
+          <CryptoCard holdings={crypto} total={fromUSD(cryptoUSD, currency)} currency={currency} privacy={privacy} loading={loading} formatCurrency={fmt} />
         </div>
 
-        {/* Asset Allocation Summary */}
-        {!loading && (
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-5">
-              <p className="text-xs text-blue-400 uppercase tracking-wider">銀行存款</p>
-              <p className="mt-2 text-2xl font-bold text-white">{formatCurrency(MOCK_BANK.balance)}</p>
-              <p className="mt-1 text-xs text-blue-300">{(MOCK_BANK.balance / totalNetWorth * 100).toFixed(1)}%</p>
+        {/* Donut Chart + Asset Allocation */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <DonutChart bankUSD={bankUSD} stockUSD={stockUSD} cryptoUSD={cryptoUSD} currency={currency} privacy={privacy} />
+
+          {/* Allocation Summary */}
+          {!loading && (
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+              <h2 className="text-base font-semibold text-white mb-4">📈 組合概覽</h2>
+              <div className="space-y-4">
+                {[
+                  { label: '銀行存款', value: bankUSD, color: '#6366F1', pct: totalUSD > 0 ? (bankUSD / totalUSD) * 100 : 0 },
+                  { label: '股票', value: stockUSD, color: '#10B981', pct: totalUSD > 0 ? (stockUSD / totalUSD) * 100 : 0 },
+                  { label: '加密貨幣', value: cryptoUSD, color: '#F59E0B', pct: totalUSD > 0 ? (cryptoUSD / totalUSD) * 100 : 0 },
+                ].map(item => (
+                  <div key={item.label}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                        <span className="text-sm text-slate-300">{item.label}</span>
+                      </div>
+                      <span className="text-sm font-semibold text-white">{item.pct.toFixed(1)}%</span>
+                    </div>
+                    <div className="w-full bg-white/10 rounded-full h-2">
+                      <div
+                        className="h-2 rounded-full transition-all duration-500"
+                        style={{ width: `${item.pct}%`, backgroundColor: item.color }}
+                      />
+                    </div>
+                    <p className={`text-right text-sm text-slate-300 mt-1 ${privacy ? 'blur-sm select-none' : ''}`}>
+                      {formatCurrency(fromUSD(item.value, currency), currency, false)}
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="rounded-2xl border border-green-500/20 bg-green-500/10 p-5">
-              <p className="text-xs text-green-400 uppercase tracking-wider">股票</p>
-              <p className="mt-2 text-2xl font-bold text-white">{formatCurrency(stockTotal)}</p>
-              <p className="mt-1 text-xs text-green-300">{(stockTotal / totalNetWorth * 100).toFixed(1)}%</p>
-            </div>
-            <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-5">
-              <p className="text-xs text-amber-400 uppercase tracking-wider">加密貨幣</p>
-              <p className="mt-2 text-2xl font-bold text-white">{formatCurrency(cryptoTotal)}</p>
-              <p className="mt-1 text-xs text-amber-300">{(cryptoTotal / totalNetWorth * 100).toFixed(1)}%</p>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-white/10 bg-slate-950 mt-8">
         <div className="max-w-7xl mx-auto px-4 py-4 text-center text-xs text-slate-500 sm:px-6 lg:px-8">
-          Wealth Dashboard MVP · 資料僅供參考，不構成投資建議
+          Wealth Dashboard MVP · 報價僅供參考，不構成投資建議 · Ctrl+H 隱藏金額
         </div>
       </footer>
     </div>
