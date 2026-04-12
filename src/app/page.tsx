@@ -300,16 +300,20 @@ export default function Dashboard() {
     return () => removeEventListener('keydown', handler);
   }, []);
 
-  // Fetch prices — absolute URL + cold-start delay ensures Vercel serverless compatibility
+  // Fetch prices — absolute URL + cold-start delay for Vercel serverless compatibility
   useEffect(() => {
-    const timeoutId = setTimeout(() => setLoading(false), 15000);
+    const timeoutId = setTimeout(() => {
+      // Safety: if loading not cleared after 15s, force-clear it
+      setLoading(false);
+    }, 15000);
     let isCancelled = false;
-    const BASE = typeof window !== 'undefined' ? window.location.origin : '';
+    const BASE = window.location.origin;
 
     async function doFetch() {
+      let stockOk = false, cryptoOk = false;
       try {
-        // Delay to allow Vercel serverless cold-start to complete
-        await new Promise(r => setTimeout(r, 1000));
+        // Cold-start delay: give Vercel serverless function time to initialize
+        await new Promise(r => setTimeout(r, 1500));
         if (isCancelled) return;
 
         const [stockRes, cryptoRes] = await Promise.all([
@@ -318,6 +322,9 @@ export default function Dashboard() {
         ]);
 
         if (isCancelled) return;
+        if (!stockRes.ok) throw new Error(`stocks HTTP ${stockRes.status}`);
+        if (!cryptoRes.ok) throw new Error(`crypto HTTP ${cryptoRes.status}`);
+        stockOk = cryptoOk = true;
 
         const [stockData, cryptoData] = await Promise.all([
           stockRes.json() as Promise<{ prices?: Record<string, { regularMarketPrice?: number }> }>,
@@ -349,7 +356,7 @@ export default function Dashboard() {
           }));
         }
       } catch (err) {
-        console.error('Price fetch error:', err);
+        console.error('Price fetch error:', err, '| stockOk:', stockOk, '| cryptoOk:', cryptoOk);
       } finally {
         if (!isCancelled) {
           clearTimeout(timeoutId);
