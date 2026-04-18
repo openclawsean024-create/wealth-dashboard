@@ -1,5 +1,4 @@
 import DashboardClient from './DashboardClient';
-import type { StockHolding, CryptoHolding } from './DashboardClient';
 
 // Server Component — fetches data directly (no client-side fetch timing issues)
 export default async function Page() {
@@ -23,13 +22,13 @@ export default async function Page() {
     console.error('Server-side fetch failed:', e);
   }
 
-  const STOCK_HOLDINGS: StockHolding[] = [
+  const STOCK_HOLDINGS = [
     { symbol: '2330.TW', name: '台積電', shares: 100, avgCost: 580, category: 'Equity' },
     { symbol: '2317.TW', name: '鴻海', shares: 200, avgCost: 148, category: 'Equity' },
     { symbol: 'BTC-USD', name: 'Bitcoin ETF', shares: 50, avgCost: 42000, category: 'ETF' },
   ];
 
-  const CRYPTO_HOLDINGS: CryptoHolding[] = [
+  const CRYPTO_HOLDINGS = [
     { id: 'bitcoin', symbol: 'BTC', name: 'Bitcoin', amount: 0.85, avgCost: 62000, category: 'Store of Value' },
     { id: 'ethereum', symbol: 'ETH', name: 'Ethereum', amount: 4.2, avgCost: 2800, category: 'Layer 1' },
     { id: 'solana', symbol: 'SOL', name: 'Solana', amount: 25, avgCost: 95, category: 'Layer 1' },
