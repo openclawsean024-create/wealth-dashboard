@@ -1,22 +1,29 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0D1117;
-  --foreground: #E6EDF3;
-  --surface: #161B22;
-  --card: #161B22;
-  --card-foreground: #E6EDF3;
-  --primary: #1E3A5F;
-  --primary-light: #2563EB;
-  --primary-foreground: #ffffff;
-  --muted: #21262D;
-  --muted-foreground: #8B949E;
-  --accent: #58A6FF;
-  --accent-foreground: #0D1117;
-  --border: #30363D;
-  --positive: #3FB950;
-  --negative: #F85149;
-  --neutral: #D29922;
+  --color-primary: #6366F1;
+  --color-accent: #10B981;
+  --color-danger: #EF4444;
+  --color-warning: #F59E0B;
+  --color-bg: #0F172A;
+  --color-surface: #1E293B;
+  --color-surface-2: #334155;
+  --color-border: #475569;
+  --color-text: #F1F5F9;
+  --color-text-muted: #94A3B8;
+  --color-chart-1: #6366F1;
+  --color-chart-2: #10B981;
+  --color-chart-3: #F59E0B;
+  --color-chart-4: #EF4444;
+  --color-chart-5: #8B5CF6;
+  --color-chart-6: #EC4899;
+  /* account category colors */
+  --color-account-cash: #10B981;
+  --color-account-stock: #58A6FF;
+  --color-account-fund: #8B5CF6;
+  --color-account-crypto: #F59E0B;
+  --color-account-real-estate: #EC4899;
+  --color-account-other: #8B949E;
 }
 
 @theme inline {

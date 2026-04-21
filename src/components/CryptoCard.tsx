@@ -60,7 +60,7 @@ export default function CryptoCard({ holdings, total, currency, privacy, loading
                     {loading ? '...' : formatCurrency(coin.value || 0)}
                   </p>
                   {!loading && coin.gain !== undefined && (
-                    <p className={`text-xs ${coin.gain >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <p className={`text-xs ${coin.gain >= 0 ? 'text-[var(--color-accent)]' : 'text-[var(--color-danger)]'}`}>
                       {coin.gain >= 0 ? '+' : ''}{coin.gainPercent?.toFixed(2)}%
                     </p>
                   )}

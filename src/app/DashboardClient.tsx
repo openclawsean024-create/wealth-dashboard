@@ -33,7 +33,13 @@ const CATEGORY_LABELS: Record<string, string> = {
   other: '其他',
 };
 
-const CATEGORY_COLORS = ['#58A6FF', '#3FB950', '#D29922', '#F85149', '#8B949E'];
+const CATEGORY_COLORS = [
+  'var(--color-account-stock)',
+  'var(--color-accent)',
+  'var(--color-account-cash)',
+  'var(--color-account-crypto)',
+  'var(--color-account-other)',
+];
 
 // Performance trend mock data
 function generatePerformanceData(interval: TimeInterval) {
@@ -124,8 +130,8 @@ function TotalOverviewCard({ totalUSD, totalTWD, todayGainUSD, todayGainPercent,
 }) {
   const animatedUSD = useCountUp(totalUSD);
   const animatedTWD = useCountUp(totalTWD);
-  const todayColor = todayGainUSD >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]';
-  const totalColor = totalGainUSD >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]';
+  const todayColor = todayGainUSD >= 0 ? 'text-[var(--color-accent)]' : 'text-[var(--color-danger)]';
+  const totalColor = totalGainUSD >= 0 ? 'text-[var(--color-accent)]' : 'text-[var(--color-danger)]';
 
   return (
     <div className="rounded-2xl border border-[#30363D] bg-[#161B22] p-6">
@@ -177,35 +183,42 @@ function DonutChart({ assets, currency, privacy, fmt }: {
     <div className="rounded-2xl border border-[#30363D] bg-[#161B22] p-6">
       <h2 className="text-base font-semibold text-white mb-4">📊 資產配置</h2>
       <div className="flex items-center gap-6">
-        <ResponsiveContainer width={160} height={160}>
-          <PieChart>
-            <Pie
-              data={data}
-              cx="50%"
-              cy="50%"
-              innerRadius={48}
-              outerRadius={72}
-              paddingAngle={2}
-              dataKey="value"
-              onMouseEnter={(_, index) => setActiveIndex(index)}
-              onMouseLeave={() => setActiveIndex(null)}
-            >
-              {data.map((_, i) => (
-                <Cell
-                  key={i}
-                  fill={COLORS[i]}
-                  opacity={activeIndex === null || activeIndex === i ? 1 : 0.5}
-                  style={{ transform: activeIndex === i ? 'scale(1.05)' : 'scale(1)', transformOrigin: 'center', transition: 'transform 150ms ease, opacity 150ms ease', cursor: 'pointer' }}
-                />
-              ))}
-            </Pie>
-            <Tooltip
-              formatter={(v: unknown) => [`$${((v as number) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`, '']}
-              contentStyle={{ backgroundColor: '#161B22', border: '1px solid #30363D', borderRadius: 12, color: '#E6EDF3', fontSize: 13 }}
-              itemStyle={{ color: '#E6EDF3' }}
-            />
-          </PieChart>
-        </ResponsiveContainer>
+        <div className="relative" style={{ width: 160, height: 160 }}>
+          <ResponsiveContainer width={160} height={160}>
+            <PieChart>
+              <Pie
+                data={data}
+                cx="50%"
+                cy="50%"
+                innerRadius={48}
+                outerRadius={72}
+                paddingAngle={2}
+                dataKey="value"
+                onMouseEnter={(_, index) => setActiveIndex(index)}
+                onMouseLeave={() => setActiveIndex(null)}
+              >
+                {data.map((_, i) => (
+                  <Cell
+                    key={i}
+                    fill={COLORS[i]}
+                    opacity={activeIndex === null || activeIndex === i ? 1 : 0.5}
+                    style={{ transform: activeIndex === i ? 'scale(1.05)' : 'scale(1)', transformOrigin: 'center', transition: 'transform 150ms ease, opacity 150ms ease', cursor: 'pointer' }}
+                  />
+                ))}
+              </Pie>
+              <Tooltip
+                formatter={(v: unknown) => [`$${((v as number) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`, '']}
+                contentStyle={{ backgroundColor: '#161B22', border: '1px solid #30363D', borderRadius: 12, color: '#E6EDF3', fontSize: 13 }}
+                itemStyle={{ color: '#E6EDF3' }}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+          {/* Center overlay — horizontally & vertically centered in donut hole */}
+          <div className="absolute pointer-events-none" style={{ left: 40, top: 52, width: 80 }}>
+            <p className={`text-xs text-[#8B949E] text-center ${privacy ? 'blur-sm select-none' : ''}`}>總資產</p>
+            <p className={`text-sm font-bold text-white text-center leading-tight ${privacy ? 'blur-sm select-none' : ''}`}>{fmt(fromUSD(total, currency))}</p>
+          </div>
+        </div>
         <div className="flex-1 space-y-3">
           {data.map((d, i) => (
             <div key={d.name} className="flex items-center gap-2">
@@ -446,6 +459,12 @@ export default function DashboardClient({ initialStocks, initialCrypto }: {
               <p className="mt-2 max-w-2xl text-sm text-[#8B949E]">整合銀行、證券、加密資產的個人資產中心。</p>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
+              <a
+                href="/settings"
+                className="px-3 py-1.5 rounded-xl bg-[#161B22] border border-[#30363D] text-[#8B949E] hover:text-white hover:border-[#58A6FF] text-sm transition-all"
+              >
+                ⚙️ API 設定
+              </a>
               <div className="flex bg-[#161B22] border border-[#30363D] rounded-xl p-1 gap-1">
                 {(['USDC', 'BTC', 'ETH', 'CNY'] as DisplayCurrency[]).map(c => (
                   <button

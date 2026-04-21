@@ -41,7 +41,7 @@ export default function BankCard({ bank, formatCurrency }: BankCardProps) {
         <div className="grid grid-cols-2 gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm text-slate-300">
           <div>
             <p className="text-slate-500 text-xs uppercase tracking-[0.2em]">Link</p>
-            <p className="mt-1 font-medium text-emerald-300">已連結</p>
+            <p className="mt-1 font-medium text-[var(--color-accent)]">已連結</p>
           </div>
           <div className="text-right">
             <p className="text-slate-500 text-xs uppercase tracking-[0.2em]">Sync</p>
@@ -58,7 +58,7 @@ export default function BankCard({ bank, formatCurrency }: BankCardProps) {
                   <p className="text-slate-100">{tx.description}</p>
                   <p className="text-slate-500 text-xs">{tx.date}</p>
                 </div>
-                <span className={`font-medium ${tx.amount >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                <span className={`font-medium ${tx.amount >= 0 ? 'text-[var(--color-accent)]' : 'text-[var(--color-danger)]'}`}>
                   {tx.amount >= 0 ? '+' : ''}{formatCurrency(Math.abs(tx.amount))}
                 </span>
               </div>

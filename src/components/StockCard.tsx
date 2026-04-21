@@ -65,7 +65,7 @@ export default function StockCard({ holdings, total, currency, privacy, loading,
                     {loading ? '...' : formatCurrency(stock.value || 0)}
                   </p>
                   {!loading && stock.gain !== undefined && (
-                    <p className={`text-xs ${stock.gain >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <p className={`text-xs ${stock.gain >= 0 ? 'text-[var(--color-accent)]' : 'text-[var(--color-danger)]'}`}>
                       {stock.gain >= 0 ? '+' : ''}{stock.gainPercent?.toFixed(2)}%
                     </p>
                   )}
