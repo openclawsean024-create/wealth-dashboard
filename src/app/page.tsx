@@ -53,5 +53,5 @@ export default async function Page() {
     return { ...c, currentPrice, value, gain, gainPercent };
   });
 
-  return <DashboardClient initialStocks={initialStocks} initialCrypto={initialCrypto} />;
+  return <DashboardClient />;
 }
