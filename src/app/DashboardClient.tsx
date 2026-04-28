@@ -3,75 +3,72 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Area, AreaChart } from 'recharts';
 
-export interface AssetHolding {
+// ─── Types ───────────────────────────────────────────────────────────────────
+export interface Asset {
   id: string;
   name: string;
   value: number;
-  cost: number;
-  category: 'stock' | 'bond' | 'cash' | 'crypto' | 'other';
-  symbol?: string;
-  unit?: string;
+  costBasis?: number;
+  category: 'cash' | 'stock' | 'fund' | 'crypto' | 'real-estate' | 'other';
+  currency: string;
+  institution?: string;
+  updatedAt: string;
 }
 
-const TWD_PER_USD = 32.5;
+type SortKey = 'value' | 'name' | 'category';
+type DisplayCurrency = 'TWD' | 'USD';
+type TimeInterval = '7' | '30' | '90' | '365';
 
-type DisplayCurrency = 'USDC' | 'BTC' | 'ETH' | 'CNY';
-type Currency = 'USD' | 'TWD' | 'HKD' | 'JPY' | 'EUR';
-type TimeInterval = '1D' | '1W' | '1M' | '1Y' | 'All';
-
-const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', TWD: 'NT$', HKD: 'HK$', JPY: '¥', EUR: '€' };
-const CURRENCY_DECIMALS: Record<string, number> = { USD: 2, TWD: 0, HKD: 2, JPY: 0, EUR: 2 };
-const CURRENCY_NAMES: Record<string, string> = { USD: '美元', TWD: '新台幣', HKD: '港幣', JPY: '日圓', EUR: '歐元' };
-
-const FALLBACK_FX = { BTC: 0.000016, ETH: 0.00027, CNY: 7.25 };
+// ─── Constants ────────────────────────────────────────────────────────────────
+const STORAGE_KEY = 'wd_v4';
+const TX_STORAGE_KEY = 'wd_txs_v4';
 
 const CATEGORY_LABELS: Record<string, string> = {
+  cash: '現金/銀行存款',
   stock: '股票',
-  bond: '債券',
-  cash: '現金',
+  fund: '基金/ETF',
   crypto: '加密貨幣',
+  'real-estate': '房地產',
   other: '其他',
 };
 
-const CATEGORY_COLORS = [
-  'var(--color-account-stock)',
-  'var(--color-accent)',
-  'var(--color-account-cash)',
-  'var(--color-account-crypto)',
-  'var(--color-account-other)',
+const CHART_COLORS = [
+  'var(--color-chart-1)',
+  'var(--color-chart-2)',
+  'var(--color-chart-3)',
+  'var(--color-chart-4)',
+  'var(--color-chart-5)',
+  'var(--color-chart-6)',
 ];
 
-// Performance trend mock data
-function generatePerformanceData(interval: TimeInterval) {
-  const now = new Date();
-  const points: { date: string; value: number; benchmark: number }[] = [];
-  let days: number;
-  switch (interval) {
-    case '1D': days = 1; break;
-    case '1W': days = 7; break;
-    case '1M': days = 30; break;
-    case '1Y': days = 365; break;
-    default: days = 365;
-  }
-  const base = 100;
-  let val = base;
-  let bench = base;
-  for (let i = days; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    val = val * (1 + (Math.random() - 0.45) * 0.02);
-    bench = bench * (1 + (Math.random() - 0.47) * 0.015);
-    points.push({
-      date: d.toLocaleDateString('zh-TW', { month: 'short', day: interval === '1D' ? undefined : 'numeric' }),
-      value: Math.round(val * 100) / 100,
-      benchmark: Math.round(bench * 100) / 100,
-    });
-  }
-  return points;
+const TWD_PER_USD = 32.5;
+const CURRENCY_SYMBOL: Record<string, string> = { TWD: 'NT$', USD: '$' };
+
+// ─── Mock initial data (6 categories) ─────────────────────────────────────────
+const INITIAL_ASSETS: Asset[] = [
+  { id: '1', name: '玉山銀行 數位存款', category: 'cash', value: 520000, costBasis: 520000, currency: 'TWD', institution: '玉山銀行', updatedAt: new Date().toISOString() },
+  { id: '2', name: '王道銀行 存款帳戶', category: 'cash', value: 280000, costBasis: 280000, currency: 'TWD', institution: '王道銀行', updatedAt: new Date().toISOString() },
+  { id: '3', name: '台積電 2330', category: 'stock', value: 890000, costBasis: 620000, currency: 'TWD', institution: '富果證券', updatedAt: new Date().toISOString() },
+  { id: '4', name: 'NVIDIA', category: 'stock', value: 420000, costBasis: 310000, currency: 'USD', institution: 'Firstrade', updatedAt: new Date().toISOString() },
+  { id: '5', name: '元大台灣 0050', category: 'fund', value: 350000, costBasis: 300000, currency: 'TWD', institution: '基富通', updatedAt: new Date().toISOString() },
+  { id: '6', name: '統一 FANG+ ETF', category: 'fund', value: 180000, costBasis: 150000, currency: 'TWD', institution: '基富通', updatedAt: new Date().toISOString() },
+  { id: '7', name: '比特幣 BTC', category: 'crypto', value: 650000, costBasis: 400000, currency: 'USD', institution: 'MAX 交易所', updatedAt: new Date().toISOString() },
+  { id: '8', name: '乙太幣 ETH', category: 'crypto', value: 220000, costBasis: 180000, currency: 'USD', institution: 'MAX 交易所', updatedAt: new Date().toISOString() },
+  { id: '9', name: '台北市住宅', category: 'real-estate', value: 5800000, costBasis: 5200000, currency: 'TWD', institution: '自住', updatedAt: new Date().toISOString() },
+  { id: '10', name: '黃金條塊 500g', category: 'other', value: 280000, costBasis: 240000, currency: 'TWD', institution: '銀樓', updatedAt: new Date().toISOString() },
+];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function vr(value: number, decimals = 0): string {
+  if (typeof value !== 'number' || isNaN(value)) return '0';
+  return value.toLocaleString('zh-TW', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
-// Count-up animation hook
-function useCountUp(target: number, duration = 500) {
+function fmtGain(v: number, suffix = '%'): string {
+  return `${v >= 0 ? '+' : ''}${v.toFixed(2)}${suffix}`;
+}
+
+function useCountUp(target: number, duration = 600): number {
   const [value, setValue] = useState(0);
   const rafRef = useRef<number | null>(null);
   const startRef = useRef<number | null>(null);
@@ -95,141 +92,98 @@ function useCountUp(target: number, duration = 500) {
   return value;
 }
 
-function fromUSD(usd: number, currency: DisplayCurrency): number {
-  if (currency === 'USDC') return usd;
-  if (currency === 'BTC') return usd * FALLBACK_FX.BTC;
-  if (currency === 'ETH') return usd * FALLBACK_FX.ETH;
-  if (currency === 'CNY') return usd * TWD_PER_USD * FALLBACK_FX.CNY;
-  return usd;
+// Mock history generator
+function generateHistory(total: number, days: number) {
+  const points: { date: string; value: number }[] = [];
+  let val = total * 0.85;
+  const now = new Date();
+  for (let i = days; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    val = Math.max(val * (1 + (Math.random() - 0.47) * 0.015), total * 0.5);
+    points.push({
+      date: d.toISOString().split('T')[0],
+      value: Math.round(val),
+    });
+  }
+  return points;
 }
 
-function formatDisplayCurrency(value: number, currency: DisplayCurrency, privacy: boolean): string {
-  if (privacy) return '••••••';
-  const sym = currency === 'USDC' ? '$' : currency === 'ETH' ? 'Ξ' : currency === 'BTC' ? '₿' : '¥';
-  if (currency === 'BTC') return `${value.toFixed(5)} BTC`;
-  if (currency === 'ETH') return `${value.toFixed(4)} ETH`;
-  if (currency === 'CNY') return `¥${value.toLocaleString('zh-TW', { maximumFractionDigits: 0 })}`;
-  return `${sym}${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+// ─── Components ───────────────────────────────────────────────────────────────
 
-function formatCurrencyTWD(value: number, privacy: boolean): string {
-  if (privacy) return '••••••';
-  return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(value);
-}
-
-function formatGain(v: number, suffix = '') {
-  const sign = v >= 0 ? '+' : '';
-  return `${sign}${v.toFixed(2)}${suffix}`;
-}
-
-// ─── Total Overview Card ───────────────────────────────────────────────────────
-function TotalOverviewCard({ totalUSD, totalTWD, todayGainUSD, todayGainPercent, totalGainUSD, totalGainPercent, currency, privacy, fmt, fmtTWD }: {
-  totalUSD: number; totalTWD: number; todayGainUSD: number; todayGainPercent: number;
-  totalGainUSD: number; totalGainPercent: number;
-  currency: DisplayCurrency; privacy: boolean; fmt: (v: number) => string; fmtTWD: (v: number) => string;
-}) {
-  const animatedUSD = useCountUp(totalUSD);
-  const animatedTWD = useCountUp(totalTWD);
-  const todayColor = todayGainUSD >= 0 ? 'text-[var(--color-accent)]' : 'text-[var(--color-danger)]';
-  const totalColor = totalGainUSD >= 0 ? 'text-[var(--color-accent)]' : 'text-[var(--color-danger)]';
-
+// Donut Chart Tooltip
+function DonutTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: { label: string; value: number; pct: string } }> }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
   return (
-    <div className="rounded-2xl border border-[#30363D] bg-[#161B22] p-6">
-      <p className="text-xs uppercase tracking-[0.2em] text-[#8B949E] mb-2">總資產</p>
-      <p className={`text-3xl font-bold font-mono text-white ${privacy ? 'blur-sm select-none' : ''}`}>
-        {fmt(animatedUSD)}
-      </p>
-      <p className={`text-sm text-[#8B949E] mt-1 ${privacy ? 'blur-sm select-none' : ''}`}>
-        ≈ {fmtTWD(animatedTWD)}
-      </p>
-
-      <div className="grid grid-cols-2 gap-4 mt-5">
-        <div>
-          <p className="text-xs text-[#8B949E] mb-1">今日累計損益</p>
-          <p className={`font-mono font-semibold text-sm ${todayColor} ${privacy ? 'blur-sm select-none' : ''}`}>
-            {todayGainUSD >= 0 ? '+' : ''}{fmt(todayGainUSD)}
-            <span className="text-xs ml-1">({todayGainPercent >= 0 ? '+' : ''}{todayGainPercent.toFixed(2)}%)</span>
-          </p>
-        </div>
-        <div>
-          <p className="text-xs text-[#8B949E] mb-1">累計損益</p>
-          <p className={`font-mono font-semibold text-sm ${totalColor} ${privacy ? 'blur-sm select-none' : ''}`}>
-            {totalGainUSD >= 0 ? '+' : ''}{fmt(totalGainUSD)}
-            <span className="text-xs ml-1">({totalGainPercent >= 0 ? '+' : ''}{totalGainPercent.toFixed(2)}%)</span>
-          </p>
-        </div>
-      </div>
+    <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', boxShadow: 'var(--shadow-md)', fontFamily: 'var(--font-family)' }}>
+      <div style={{ fontWeight: 600 }}>{d.label}</div>
+      <div style={{ color: 'var(--color-text-muted)' }}>{vr(d.value)} ({d.pct}%)</div>
     </div>
   );
 }
 
-// ─── Donut Chart ──────────────────────────────────────────────────────────────
-function DonutChart({ assets, currency, privacy, fmt }: {
-  assets: { category: string; value: number }[];
-  currency: DisplayCurrency; privacy: boolean; fmt: (v: number) => string;
-}) {
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+// Line Chart Tooltip
+function LineTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number }>; label?: string }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', boxShadow: 'var(--shadow-md)', fontFamily: 'var(--font-family)' }}>
+      <div style={{ color: 'var(--color-text-muted)', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontWeight: 600 }}>{vr(payload[0].value)}</div>
+    </div>
+  );
+}
+
+// Donut Chart
+function DonutChart({ assets, privacy }: { assets: Asset[]; privacy: boolean }) {
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
   const total = assets.reduce((s, a) => s + a.value, 0);
 
-  const data = assets.map(a => ({
-    name: CATEGORY_LABELS[a.category] || a.category,
-    value: a.value,
-    category: a.category,
-  }));
-
-  const COLORS = CATEGORY_COLORS;
+  const data = Object.entries(CATEGORY_LABELS).map(([key, label]) => {
+    const catTotal = assets.filter(a => a.category === key).reduce((s, a) => s + a.value, 0);
+    return { key, label, value: catTotal, pct: total > 0 ? ((catTotal / total) * 100).toFixed(1) : '0.0' };
+  }).filter(d => d.value > 0);
 
   return (
-    <div className="rounded-2xl border border-[#30363D] bg-[#161B22] p-6">
-      <h2 className="text-base font-semibold text-white mb-4">📊 資產配置</h2>
-      <div className="flex items-center gap-6">
-        <div className="relative" style={{ width: 160, height: 160 }}>
-          <ResponsiveContainer width={160} height={160}>
-            <PieChart>
-              <Pie
-                data={data}
-                cx="50%"
-                cy="50%"
-                innerRadius={48}
-                outerRadius={72}
-                paddingAngle={2}
-                dataKey="value"
-                onMouseEnter={(_, index) => setActiveIndex(index)}
-                onMouseLeave={() => setActiveIndex(null)}
-              >
-                {data.map((_, i) => (
-                  <Cell
-                    key={i}
-                    fill={COLORS[i]}
-                    opacity={activeIndex === null || activeIndex === i ? 1 : 0.5}
-                    style={{ transform: activeIndex === i ? 'scale(1.05)' : 'scale(1)', transformOrigin: 'center', transition: 'transform 150ms ease, opacity 150ms ease', cursor: 'pointer' }}
-                  />
-                ))}
-              </Pie>
-              <Tooltip
-                formatter={(v: unknown) => [`$${((v as number) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`, '']}
-                contentStyle={{ backgroundColor: '#161B22', border: '1px solid #30363D', borderRadius: 12, color: '#E6EDF3', fontSize: 13 }}
-                itemStyle={{ color: '#E6EDF3' }}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-          {/* Center overlay — horizontally & vertically centered in donut hole */}
-          <div className="absolute pointer-events-none" style={{ left: 40, top: 52, width: 80 }}>
-            <p className={`text-xs text-[#8B949E] text-center ${privacy ? 'blur-sm select-none' : ''}`}>總資產</p>
-            <p className={`text-sm font-bold text-white text-center leading-tight ${privacy ? 'blur-sm select-none' : ''}`}>{fmt(fromUSD(total, currency))}</p>
-          </div>
-        </div>
-        <div className="flex-1 space-y-3">
+    <div className="donut-wrapper">
+      <div className="donut-wrapper__title">📊 資產配置</div>
+      <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <ResponsiveContainer width={160} height={160}>
+          <PieChart>
+            <Pie
+              data={data}
+              cx="50%"
+              cy="50%"
+              innerRadius={48}
+              outerRadius={72}
+              paddingAngle={2}
+              dataKey="value"
+              onMouseEnter={(_, idx) => setActiveIdx(idx)}
+              onMouseLeave={() => setActiveIdx(null)}
+            >
+              {data.map((_, i) => (
+                <Cell
+                  key={i}
+                  fill={CHART_COLORS[i % CHART_COLORS.length]}
+                  opacity={activeIdx === null || activeIdx === i ? 1 : 0.5}
+                  style={{ transform: activeIdx === i ? 'scale(1.05)' : 'scale(1)', transformOrigin: 'center', transition: 'transform 150ms ease, opacity 150ms ease', cursor: 'pointer' }}
+                />
+              ))}
+            </Pie>
+            <Tooltip content={<DonutTooltip />} />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="donut-legend" style={{ flex: 1 }}>
           {data.map((d, i) => (
-            <div key={d.name} className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS[i] }} />
-              <span className="text-sm text-[#8B949E] flex-1">{d.name}</span>
-              <span className="text-sm font-semibold text-white">
-                {total > 0 ? ((d.value / total) * 100).toFixed(1) : '0.0'}%
-              </span>
-              <span className={`text-sm font-medium text-[#E6EDF3] ${privacy ? 'blur-sm select-none' : ''}`}>
-                {fmt(fromUSD(d.value, currency))}
-              </span>
+            <div key={d.key} className="donut-legend__item">
+              <div className="donut-legend__left">
+                <div className="donut-legend__dot" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                <span className="donut-legend__name">{d.label}</span>
+              </div>
+              <div className="donut-legend__right">
+                <span className={privacy ? 'privacy-value' : ''}>{privacy ? '••••' : vr(d.value)}</span>
+                <span className="donut-legend__pct">{d.pct}%</span>
+              </div>
             </div>
           ))}
         </div>
@@ -238,281 +192,485 @@ function DonutChart({ assets, currency, privacy, fmt }: {
   );
 }
 
-// ─── Performance Trend Chart ─────────────────────────────────────────────────
-function PerformanceChart({ interval, setInterval, currency, privacy, fmt }: {
-  interval: TimeInterval; setInterval: (v: TimeInterval) => void;
-  currency: DisplayCurrency; privacy: boolean; fmt: (v: number) => string;
-}) {
-  const [data] = useState(() => generatePerformanceData(interval));
+// Line Chart
+const LINE_TABS = [
+  { key: '7', label: '7日' },
+  { key: '30', label: '30日' },
+  { key: '90', label: '90日' },
+  { key: '365', label: '1年' },
+];
+
+function LineChart({ total, period, onPeriodChange }: { total: number; period: string; onPeriodChange: (p: string) => void }) {
+  const days = parseInt(period) || 30;
+  const data = generateHistory(total, days);
+  const textColor = 'var(--color-text-muted)';
+  const borderColor = 'var(--color-border)';
+
+  const fmtDate = (d: string) => {
+    const dt = new Date(d + 'T00:00:00');
+    return `${dt.getMonth() + 1}/${dt.getDate()}`;
+  };
 
   return (
-    <div className="rounded-2xl border border-[#30363D] bg-[#161B22] p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-base font-semibold text-white">📈 績效趨勢</h2>
-        <div className="flex gap-1">
-          {(['1D', '1W', '1M', '1Y', 'All'] as TimeInterval[]).map(t => (
+    <div className="linechart-wrapper">
+      <div className="linechart-header">
+        <div className="linechart-title">📈 歷史趨勢</div>
+        <div className="linechart-tabs">
+          {LINE_TABS.map(t => (
             <button
-              key={t}
-              onClick={() => setInterval(t)}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${interval === t ? 'bg-[#1E3A5F] text-white' : 'text-[#8B949E] hover:text-white hover:bg-[#21262D]'}`}
+              key={t.key}
+              onClick={() => onPeriodChange(t.key)}
+              className={`linechart-tab ${period === t.key ? 'linechart-tab--active' : ''}`}
             >
-              {t}
+              {t.label}
             </button>
           ))}
         </div>
       </div>
       <ResponsiveContainer width="100%" height={180}>
-        <AreaChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
+        <AreaChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
           <defs>
-            <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#58A6FF" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#58A6FF" stopOpacity={0} />
+            <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="var(--color-primary)" stopOpacity={0.3} />
+              <stop offset="95%" stopColor="var(--color-primary)" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#30363D" />
-          <XAxis dataKey="date" tick={{ fill: '#8B949E', fontSize: 11 }} tickLine={false} axisLine={false} />
-          <YAxis tick={{ fill: '#8B949E', fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={v => `${v}`} />
-          <Tooltip
-            contentStyle={{ backgroundColor: '#161B22', border: '1px solid #30363D', borderRadius: 12, color: '#E6EDF3', fontSize: 12 }}
-            formatter={(v: unknown) => [`${v}`, '績效']}
+          <CartesianGrid strokeDasharray="3 3" stroke={borderColor} opacity={0.5} />
+          <XAxis
+            dataKey="date"
+            tickFormatter={fmtDate}
+            tick={{ fill: textColor, fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+            interval="preserveStartEnd"
           />
-          <Area type="monotone" dataKey="benchmark" stroke="#8B949E" strokeDasharray="4 4" fill="none" strokeWidth={1.5} name="基準" />
-          <Area type="monotone" dataKey="value" stroke="#58A6FF" fill="url(#colorValue)" strokeWidth={2} name="策略" dot={false} />
+          <YAxis
+            tickFormatter={v => vr(v)}
+            tick={{ fill: textColor, fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+            width={70}
+          />
+          <Tooltip content={<LineTooltip />} />
+          <Area
+            type="monotone"
+            dataKey="value"
+            stroke="var(--color-primary)"
+            fill="url(#colorVal)"
+            strokeWidth={2}
+            dot={false}
+            activeDot={{ r: 4, fill: 'var(--color-primary)', stroke: 'var(--color-surface)', strokeWidth: 2 }}
+          />
         </AreaChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-// ─── Asset Detail List ───────────────────────────────────────────────────────
-function AssetDetailList({ assets, currency, privacy, fmt }: {
-  assets: AssetHolding[];
-  currency: DisplayCurrency; privacy: boolean; fmt: (v: number) => string;
+// Overview Cards
+function OverviewCards({ total, todayGain, todayGainPct, assetCount, syncTime, privacy }: {
+  total: number;
+  todayGain: number;
+  todayGainPct: number;
+  assetCount: number;
+  syncTime: string | null;
+  privacy: boolean;
 }) {
+  const animatedTotal = useCountUp(total);
+  const animatedGain = useCountUp(Math.abs(todayGain));
+  const gainColor = todayGain >= 0 ? 'var(--color-accent)' : 'var(--color-danger)';
+
   return (
-    <div className="rounded-2xl border border-[#30363D] bg-[#161B22] overflow-hidden">
-      <div className="px-6 py-4 border-b border-[#30363D]">
-        <h2 className="text-base font-semibold text-white">資產明細</h2>
+    <div className="overview-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+      <div className="card">
+        <div className="card__label" style={{ fontSize: 'var(--font-size-xs)', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)', marginBottom: '0.5rem' }}>總資產</div>
+        <div className="card__value" style={{ fontSize: 'var(--font-size-3xl)', fontWeight: 700, color: 'var(--color-text)', fontVariantNumeric: 'tabular-nums', marginBottom: '0.25rem' }}>
+          {privacy ? '••••••' : `$${vr(animatedTotal)}`}
+        </div>
+        <div className="card__sub" style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+          {assetCount} 筆資產
+        </div>
       </div>
-      <div className="divide-y divide-[#21262D]">
-        {assets.map(a => {
-          const gain = a.value - a.cost;
-          const gainPct = a.cost > 0 ? (gain / a.cost) * 100 : 0;
-          const gainColor = gain >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]';
-          return (
-            <div key={a.id} className="px-6 py-4 hover:bg-[#21262D]/50 transition-colors">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-[#21262D] text-[#8B949E] border border-[#30363D]">
-                    {CATEGORY_LABELS[a.category]}
-                  </span>
-                  <span className="text-sm font-medium text-white">{a.name}</span>
-                </div>
-                <div className="flex items-center gap-6 text-sm">
-                  <span className={`font-mono text-white ${privacy ? 'blur-sm select-none' : ''}`}>{fmt(fromUSD(a.value, currency))}</span>
-                  <span className={`font-mono w-24 text-right ${gainColor} ${privacy ? 'blur-sm select-none' : ''}`}>
-                    {gain >= 0 ? '+' : ''}{fmt(fromUSD(gain, currency))}
-                  </span>
-                  <span className={`font-mono w-16 text-right ${gainColor} ${privacy ? 'blur-sm select-none' : ''}`}>
-                    {gainPct >= 0 ? '+' : ''}{gainPct.toFixed(2)}%
-                  </span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+
+      <div className="card">
+        <div className="card__label" style={{ fontSize: 'var(--font-size-xs)', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)', marginBottom: '0.5rem' }}>今日累計損益</div>
+        <div className="card__value" style={{ fontSize: 'var(--font-size-3xl)', fontWeight: 700, color: gainColor, fontVariantNumeric: 'tabular-nums', marginBottom: '0.25rem' }}>
+          {privacy ? '••••••' : `${todayGain >= 0 ? '+' : '-'}$${vr(animatedGain)}`}
+        </div>
+        <div className="card__sub" style={{ fontSize: 'var(--font-size-xs)', color: gainColor }}>
+          {privacy ? '••••' : fmtGain(todayGainPct)}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card__label" style={{ fontSize: 'var(--font-size-xs)', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)', marginBottom: '0.5rem' }}>資產類別</div>
+        <div className="card__value" style={{ fontSize: 'var(--font-size-3xl)', fontWeight: 700, color: 'var(--color-text)' }}>6</div>
+        <div className="card__sub" style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', lineHeight: 1.4 }}>
+          現金・股票・基金・加密・房地產・其他
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card__label" style={{ fontSize: 'var(--font-size-xs)', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)', marginBottom: '0.5rem' }}>最後同步</div>
+        <div className="card__value" style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: 'var(--color-text)' }}>
+          {syncTime ? new Date(syncTime).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '從未同步'}
+        </div>
+        <div className="card__sub" style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+          {syncTime ? '已同步' : '本地模式'}
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Currency Converter Panel ─────────────────────────────────────────────────
-function CurrencyConverterPanel() {
-  const [sourceCurrency, setSourceCurrency] = useState<Currency>('USD');
-  const [amount, setAmount] = useState<string>('100');
-  const [rates] = useState<Record<Currency, number>>({ USD: 1, TWD: 31.5, HKD: 7.82, JPY: 149.5, EUR: 0.92 });
-
-  const amountNum = parseFloat(amount) || 0;
+// Asset Row
+function AssetRow({ asset, privacy }: { asset: Asset; privacy: boolean }) {
+  const gain = asset.value - (asset.costBasis || asset.value);
+  const gainPct = (asset.costBasis || asset.value) > 0 ? (gain / (asset.costBasis || asset.value)) * 100 : 0;
+  const gainColor = gain >= 0 ? 'var(--color-accent)' : 'var(--color-danger)';
 
   return (
-    <div className="rounded-2xl border border-[#30363D] bg-[#161B22] p-6">
-      <h2 className="text-base font-semibold text-white mb-4">💱 幣別換算</h2>
-      <div className="flex gap-3 mb-5">
-        <select
-          value={sourceCurrency}
-          onChange={e => setSourceCurrency(e.target.value as Currency)}
-          className="px-3 py-2.5 rounded-xl bg-[#21262D] border border-[#30363D] text-white text-sm focus:outline-none focus:ring-2 focus:ring-[#58A6FF]"
-        >
-          {(['USD', 'TWD', 'HKD', 'JPY', 'EUR'] as Currency[]).map(c => (
-            <option key={c} value={c}>{CURRENCY_NAMES[c]} ({CURRENCY_SYMBOLS[c]})</option>
-          ))}
-        </select>
-        <input
-          type="number"
-          value={amount}
-          onChange={e => setAmount(e.target.value)}
-          placeholder="輸入金額"
-          className="flex-1 px-3 py-2.5 rounded-xl bg-[#21262D] border border-[#30363D] text-white text-sm focus:outline-none focus:ring-2 focus:ring-[#58A6FF]"
-        />
+    <div className="asset-row">
+      <div>
+        <span className="asset-row__name">{asset.name}</span>
+        <span className="asset-row__category">{CATEGORY_LABELS[asset.category]}</span>
       </div>
-      <div className="space-y-2">
-        {(['USD', 'TWD', 'HKD', 'JPY', 'EUR'] as Currency[]).map(curr => {
-          const rate = rates[curr] || 1;
-          const rateFromSource = rate / (rates[sourceCurrency] || 1);
-          const converted = amountNum * rateFromSource;
-          const sym = CURRENCY_SYMBOLS[curr];
-          const dec = CURRENCY_DECIMALS[curr];
-          const isSource = curr === sourceCurrency;
-          return (
-            <div key={curr} className={`flex items-center justify-between px-3 py-2 rounded-xl ${isSource ? 'bg-[#1E3A5F]/30 border border-[#1E3A5F]/50' : 'bg-[#21262D]'}`}>
-              <div className="flex items-center gap-2">
-                <span className="text-base font-semibold text-white w-8 text-center">{sym}</span>
-                <span className="text-sm text-[#8B949E]">{CURRENCY_NAMES[curr]}</span>
-              </div>
-              <span className={`font-semibold ${isSource ? 'text-[#58A6FF]' : 'text-white'}`}>
-                {converted.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec })}
-              </span>
-            </div>
-          );
-        })}
+      <div className={`asset-row__value ${privacy ? 'privacy-value' : ''}`}>
+        {privacy ? '••••••' : `${CURRENCY_SYMBOL[asset.currency] || '$'}${vr(asset.value)}`}
+      </div>
+      <div className={`asset-row__pl ${gain >= 0 ? 'asset-row__pl--positive' : 'asset-row__pl--negative'} ${privacy ? 'privacy-value' : ''}`}>
+        {privacy ? '••••' : fmtGain(gainPct)}
       </div>
     </div>
   );
 }
 
-// ─── Main Dashboard ───────────────────────────────────────────────────────────
-export default function DashboardClient({ initialStocks, initialCrypto }: {
-  initialStocks: { symbol: string; name: string; shares: number; avgCost: number; currentPrice?: number; value?: number; gain?: number; gainPercent?: number }[];
-  initialCrypto: { id: string; symbol: string; name: string; amount: number; avgCost: number; currentPrice?: number; value?: number; gain?: number; gainPercent?: number }[];
+// Asset List (with sorting + add)
+function AssetList({ assets, sortKey, onSortChange, onAdd, privacy }: {
+  assets: Asset[];
+  sortKey: SortKey;
+  onSortChange: (k: SortKey) => void;
+  onAdd: () => void;
+  privacy: boolean;
 }) {
-  const [currency, setCurrency] = useState<DisplayCurrency>('USDC');
-  const [privacy, setPrivacy] = useState(false);
-  const [interval, setInterval] = useState<TimeInterval>('1M');
+  const sorted = [...assets].sort((a, b) => {
+    if (sortKey === 'value') return b.value - a.value;
+    if (sortKey === 'name') return a.name.localeCompare(b.name, 'zh-TW');
+    return a.category.localeCompare(b.category);
+  });
 
-  useEffect(() => {
-    const saved = localStorage.getItem('wealth_currency') as DisplayCurrency | null;
-    if (saved && ['USDC', 'BTC', 'ETH', 'CNY'].includes(saved)) setCurrency(saved);
-    setPrivacy(localStorage.getItem('wealth_privacy') === 'true');
-  }, []);
+  return (
+    <div className="asset-list">
+      <div className="asset-list__header">
+        <div className="asset-list__title">資產明細（{assets.length}）</div>
+        <div className="asset-list__sort">
+          <select
+            value={sortKey}
+            onChange={e => onSortChange(e.target.value as SortKey)}
+          >
+            <option value="value">依價值</option>
+            <option value="name">依名稱</option>
+            <option value="category">依類別</option>
+          </select>
+          <button className="btn btn--primary" onClick={onAdd}>+ 新增</button>
+        </div>
+      </div>
+      {sorted.map(a => <AssetRow key={a.id} asset={a} privacy={privacy} />)}
+    </div>
+  );
+}
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key.toLowerCase() === 'h') {
-        e.preventDefault();
-        setPrivacy(v => { const next = !v; localStorage.setItem('wealth_privacy', String(next)); return next; });
-      }
-    };
-    addEventListener('keydown', handler);
-    return () => removeEventListener('keydown', handler);
-  }, []);
+// Add Asset Modal
+function AddAssetModal({ onClose, onSave }: { onClose: () => void; onSave: (asset: Asset) => void }) {
+  const [form, setForm] = useState({
+    name: '',
+    category: 'cash' as Asset['category'],
+    value: '',
+    costBasis: '',
+    currency: 'TWD',
+    institution: '',
+  });
 
-  // Build 5-category asset list
-  const stockValue = initialStocks.reduce((s, st) => s + (st.value || 0), 0);
-  const stockCost = initialStocks.reduce((s, st) => s + st.avgCost * st.shares, 0);
-  const cryptoValue = initialCrypto.reduce((s, c) => s + (c.value || 0), 0);
-  const cryptoCost = initialCrypto.reduce((s, c) => s + c.avgCost * c.amount, 0);
-
-  const bankUSD = 258420 / TWD_PER_USD;
-  const bondValue = 50000; // mock bond value
-  const bondCost = 48000;
-  const cashUSD = (50000 + 32750) / TWD_PER_USD; // TWD + USD savings
-  const cashCost = cashUSD;
-
-  const assets: AssetHolding[] = [
-    { id: 'stock', name: '股票', value: stockValue, cost: stockCost, category: 'stock' },
-    { id: 'bond', name: '債券', value: bondValue, cost: bondCost, category: 'bond' },
-    { id: 'cash', name: '現金存款', value: cashUSD, cost: cashCost, category: 'cash' },
-    { id: 'crypto', name: '加密貨幣', value: cryptoValue, cost: cryptoCost, category: 'crypto' },
-    { id: 'other', name: '其他資產', value: 8500, cost: 8000, category: 'other' },
-  ];
-
-  const totalUSD = assets.reduce((s, a) => s + a.value, 0);
-  const totalCost = assets.reduce((s, a) => s + a.cost, 0);
-  const totalGainUSD = totalUSD - totalCost;
-  const totalGainPercent = totalCost > 0 ? (totalGainUSD / totalCost) * 100 : 0;
-
-  // Mock today's gain (random within ±1%)
-  const todayGainUSD = totalUSD * (Math.random() * 0.02 - 0.01);
-  const todayGainPercent = todayGainUSD / totalUSD * 100;
-
-  const totalTWD = totalUSD * TWD_PER_USD;
-
-  const fmt = useCallback((v: number) => formatDisplayCurrency(v, currency, privacy), [currency, privacy]);
-  const fmtTWD = useCallback((v: number) => formatCurrencyTWD(v, privacy), [privacy]);
-
-  const toggleCurrency = (c: DisplayCurrency) => {
-    setCurrency(c);
-    localStorage.setItem('wealth_currency', c);
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name || !form.value) return;
+    onSave({
+      id: Date.now().toString(),
+      name: form.name,
+      category: form.category,
+      value: parseFloat(form.value) || 0,
+      costBasis: parseFloat(form.costBasis) || parseFloat(form.value) || 0,
+      currency: form.currency,
+      institution: form.institution || form.name.split(' ')[0],
+      updatedAt: new Date().toISOString(),
+    });
+    onClose();
   };
 
   return (
-    <div className="min-h-screen bg-[#0D1117] text-[#E6EDF3]">
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <h2 className="modal__title">新增資產</h2>
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label className="form-label">名稱</label>
+            <input className="form-input" placeholder="例如：台積電 2330" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required />
+          </div>
+          <div className="form-group">
+            <label className="form-label">類別</label>
+            <select className="form-select" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value as Asset['category'] }))}>
+              {Object.entries(CATEGORY_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">現值</label>
+            <input className="form-input" type="number" placeholder="0" value={form.value} onChange={e => setForm(f => ({ ...f, value: e.target.value }))} required />
+          </div>
+          <div className="form-group">
+            <label className="form-label">成本（選填）</label>
+            <input className="form-input" type="number" placeholder="同上" value={form.costBasis} onChange={e => setForm(f => ({ ...f, costBasis: e.target.value }))} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">機構</label>
+            <input className="form-input" placeholder="例如：玉山銀行、富果證券" value={form.institution} onChange={e => setForm(f => ({ ...f, institution: e.target.value }))} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">貨幣</label>
+            <select className="form-select" value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}>
+              <option value="TWD">TWD</option>
+              <option value="USD">USD</option>
+            </select>
+          </div>
+          <div className="form-actions">
+            <button type="button" className="btn btn--ghost" onClick={onClose}>取消</button>
+            <button type="submit" className="btn btn--primary">儲存</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Import/Export
+function DataActions({ assets, onImport }: { assets: Asset[]; onImport: (assets: Asset[]) => void }) {
+  const handleExport = () => {
+    const json = JSON.stringify({ assets, exportedAt: new Date().toISOString() }, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `wealth-dashboard-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target?.result as string);
+        const imported = Array.isArray(parsed.assets) ? parsed.assets : Array.isArray(parsed) ? parsed : [];
+        if (imported.length > 0) onImport(imported);
+      } catch {
+        alert('檔案格式錯誤');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  return (
+    <div className="data-actions">
+      <button className="btn btn--ghost" onClick={handleExport}>📥 匯出 JSON</button>
+      <label className="btn btn--ghost" style={{ cursor: 'pointer' }}>
+        📤 匯入 JSON
+        <input type="file" accept=".json" onChange={handleImport} style={{ display: 'none' }} />
+      </label>
+    </div>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+export default function DashboardClient() {
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [sortKey, setSortKey] = useState<SortKey>('value');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [privacy, setPrivacy] = useState(false);
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [period, setPeriod] = useState<string>('30');
+  const [syncTime, setSyncTime] = useState<string | null>(null);
+
+  // Load from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.assets && parsed.assets.length > 0) {
+          setAssets(parsed.assets);
+          return;
+        }
+      }
+      setAssets(INITIAL_ASSETS);
+    } catch {
+      setAssets(INITIAL_ASSETS);
+    }
+    setSyncTime(new Date().toISOString());
+  }, []);
+
+  // Persist to localStorage
+  useEffect(() => {
+    if (assets.length > 0) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ assets }));
+    }
+  }, [assets]);
+
+  // Theme
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('wd_theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('wd_theme') as 'dark' | 'light' | null;
+    if (savedTheme) setTheme(savedTheme);
+  }, []);
+
+  // Privacy shortcut
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        setPrivacy(p => {
+          const next = !p;
+          localStorage.setItem('wd_privacy', String(next));
+          return next;
+        });
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('wd_privacy') === 'true';
+    setPrivacy(saved);
+  }, []);
+
+  // Computed
+  const total = assets.reduce((s, a) => s + a.value, 0);
+  const totalCost = assets.reduce((s, a) => s + (a.costBasis || a.value), 0);
+  const totalGain = total - totalCost;
+  const totalGainPct = totalCost > 0 ? (totalGain / totalCost) * 100 : 0;
+  const todayGain = total * (Math.random() * 0.02 - 0.01);
+  const todayGainPct = todayGain / total * 100;
+
+  const handleAddAsset = (asset: Asset) => {
+    setAssets(prev => [...prev, asset]);
+  };
+
+  const handleImport = (imported: Asset[]) => {
+    setAssets(imported);
+    setSyncTime(new Date().toISOString());
+  };
+
+  const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
+  const syncNow = () => setSyncTime(new Date().toISOString());
+
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--color-bg)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' }}>
       {/* Header */}
-      <header className="border-b border-[#30363D] bg-[#0D1117]/80 backdrop-blur sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 py-5 sm:px-6 lg:px-8">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-[#3FB950]/20 bg-[#3FB950]/10 px-3 py-1 text-xs font-medium text-[#3FB950]">
-                Live Wealth OS · Updated {new Date().toISOString().split('T')[0]}
+      <header style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg)', position: 'sticky', top: 0, zIndex: 40 }}>
+        <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--color-text)' }}>💰 Wealth Dashboard</h1>
+            {syncTime && (
+              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-accent)', display: 'inlineBlock' }} />
+                已同步 {new Date(syncTime).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </div>
-              <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl text-white">Wealth Dashboard</h1>
-              <p className="mt-2 max-w-2xl text-sm text-[#8B949E]">整合銀行、證券、加密資產的個人資產中心。</p>
-            </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <a
-                href="/settings"
-                className="px-3 py-1.5 rounded-xl bg-[#161B22] border border-[#30363D] text-[#8B949E] hover:text-white hover:border-[#58A6FF] text-sm transition-all"
-              >
-                ⚙️ API 設定
-              </a>
-              <div className="flex bg-[#161B22] border border-[#30363D] rounded-xl p-1 gap-1">
-                {(['USDC', 'BTC', 'ETH', 'CNY'] as DisplayCurrency[]).map(c => (
-                  <button
-                    key={c}
-                    onClick={() => toggleCurrency(c)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${currency === c ? 'bg-[#1E3A5F] text-white shadow-sm' : 'text-[#8B949E] hover:text-white'}`}
-                  >
-                    {c}
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={() => setPrivacy(v => { const next = !v; localStorage.setItem('wealth_privacy', String(next)); return next; })}
-                className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#161B22] border border-[#30363D] hover:bg-[#21262D] text-sm transition-colors"
-                title={privacy ? '顯示金額 (Ctrl+H)' : '隱藏金額 (Ctrl+H)'}
-              >
-                {privacy ? '🙈' : '👁️'}
-              </button>
-            </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              className="btn--icon"
+              onClick={syncNow}
+              title="同步資料"
+              style={{ fontSize: 'var(--font-size-sm)', background: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-muted)', padding: '6px 12px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'var(--font-family)', transition: 'all var(--transition-base)' }}
+            >
+              🔄 同步
+            </button>
+            <button
+              className="btn--icon"
+              onClick={() => { setPrivacy(p => { const next = !p; localStorage.setItem('wd_privacy', String(next)); return next; }); }}
+              title="Ctrl+H 隱私模式"
+              style={{ fontSize: 'var(--font-size-sm)', background: privacy ? 'var(--color-primary)' : 'transparent', border: '1px solid var(--color-border)', color: privacy ? 'white' : 'var(--color-text-muted)', padding: '6px 12px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'var(--font-family)', transition: 'all var(--transition-base)' }}
+            >
+              {privacy ? '🔒 已隱藏' : '🔓 顯示'}
+            </button>
+            <button
+              className="btn--icon"
+              onClick={toggleTheme}
+              title="切換主題"
+              style={{ fontSize: 'var(--font-size-sm)', background: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-muted)', padding: '6px 12px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'var(--font-family)', transition: 'all var(--transition-base)' }}
+            >
+              {theme === 'dark' ? '☀️ 淺色' : '🌙 深色'}
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8 space-y-6">
-        {/* Total overview */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <TotalOverviewCard
-            totalUSD={totalUSD} totalTWD={totalTWD}
-            todayGainUSD={todayGainUSD} todayGainPercent={todayGainPercent}
-            totalGainUSD={totalGainUSD} totalGainPercent={totalGainPercent}
-            currency={currency} privacy={privacy} fmt={fmt} fmtTWD={fmtTWD}
+      <main style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        {/* Overview + Donut + Line */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+          <OverviewCards
+            total={total}
+            todayGain={todayGain}
+            todayGainPct={todayGainPct}
+            assetCount={assets.length}
+            syncTime={syncTime}
+            privacy={privacy}
           />
-          <DonutChart assets={assets} currency={currency} privacy={privacy} fmt={fmt} />
-          <PerformanceChart interval={interval} setInterval={setInterval} currency={currency} privacy={privacy} fmt={fmt} />
+          <DonutChart assets={assets} privacy={privacy} />
+          <LineChart total={total} period={period} onPeriodChange={setPeriod} />
         </div>
 
-        {/* Asset detail list - 5 categories */}
-        <AssetDetailList assets={assets} currency={currency} privacy={privacy} fmt={fmt} />
+        {/* Asset list */}
+        <AssetList
+          assets={assets}
+          sortKey={sortKey}
+          onSortChange={setSortKey}
+          onAdd={() => setShowAddModal(true)}
+          privacy={privacy}
+        />
 
-        {/* Currency converter */}
-        <CurrencyConverterPanel />
+        {/* Import/Export */}
+        <DataActions assets={assets} onImport={handleImport} />
       </main>
 
-      <footer className="border-t border-[#30363D] mt-8">
-        <div className="max-w-7xl mx-auto px-4 py-4 text-center text-xs text-[#8B949E] sm:px-6 lg:px-8">
-          Wealth Dashboard MVP · 報價僅供參考，不構成投資建議 · Ctrl+H 隱藏金額
-        </div>
+      {/* Footer */}
+      <footer style={{ borderTop: '1px solid var(--color-border)', padding: '1rem 1.5rem', textAlign: 'center', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+        Wealth Dashboard · 純本地儲存，資料不上雲端 · Ctrl+H 隱藏金額
       </footer>
+
+      {/* Add Modal */}
+      {showAddModal && (
+        <AddAssetModal
+          onClose={() => setShowAddModal(false)}
+          onSave={handleAddAsset}
+        />
+      )}
+
+      {/* Privacy overlay hint */}
+      {privacy && (
+        <div style={{ position: 'fixed', bottom: 16, right: 16, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 14px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', boxShadow: 'var(--shadow-md)', fontFamily: 'var(--font-family)', zIndex: 50 }}>
+          🔒 隱私模式已開啟 · Ctrl+H 關閉
+        </div>
+      )}
     </div>
   );
 }
