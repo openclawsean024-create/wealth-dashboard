@@ -6,6 +6,8 @@ const KEYS = {
   binance: 'wd_binance_keys',
   alpaca: 'wd_alpaca_keys',
   wise: 'wd_wise_keys',
+  max: 'wd_max_keys',
+  fugle: 'wd_fugle_keys',
 } as const;
 
 export interface BinanceKeys {
@@ -21,6 +23,15 @@ export interface AlpacaKeys {
 export interface WiseKeys {
   apiToken: string;
   profileId: string;
+}
+
+export interface MaxKeys {
+  apiKey: string;
+  secretKey: string;
+}
+
+export interface FugleKeys {
+  apiKey: string;
 }
 
 function load<T>(key: string): T | null {
@@ -53,5 +64,15 @@ export const apiKeys = {
     get: (): WiseKeys | null => load<WiseKeys>(KEYS.wise),
     set: (keys: WiseKeys) => save(KEYS.wise, keys),
     clear: () => typeof window !== 'undefined' && localStorage.removeItem(KEYS.wise),
+  },
+  max: {
+    get: (): MaxKeys | null => load<MaxKeys>(KEYS.max),
+    set: (keys: MaxKeys) => save(KEYS.max, keys),
+    clear: () => typeof window !== 'undefined' && localStorage.removeItem(KEYS.max),
+  },
+  fugle: {
+    get: (): FugleKeys | null => load<FugleKeys>(KEYS.fugle),
+    set: (keys: FugleKeys) => save(KEYS.fugle, keys),
+    clear: () => typeof window !== 'undefined' && localStorage.removeItem(KEYS.fugle),
   },
 };

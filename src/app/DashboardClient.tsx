@@ -2,6 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Area, AreaChart } from 'recharts';
+import { OnboardingWizard } from '@/components/OnboardingWizard';
+import { apiKeys } from '@/lib/api-keys';
+import { fetchBinanceSpotBalances } from '@/lib/binance';
+import { fetchAlpacaPortfolio } from '@/lib/alpaca';
+import { fetchWiseAccount } from '@/lib/wise';
+import { fetchMaxAccount } from '@/lib/max';
+import { fetchFugleAccount } from '@/lib/fugle';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 export interface Asset {
@@ -22,6 +29,8 @@ type TimeInterval = '7' | '30' | '90' | '365';
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STORAGE_KEY = 'wd_v4';
 const TX_STORAGE_KEY = 'wd_txs_v4';
+const ONBOARDED_KEY = 'wd_onboarded';
+const AUTO_SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 const CATEGORY_LABELS: Record<string, string> = {
   cash: '現金/銀行存款',
@@ -494,15 +503,54 @@ function DataActions({ assets, onImport }: { assets: Asset[]; onImport: (assets:
   );
 }
 
+// ── Connected Accounts Status Bar ────────────────────────────────────────────
+interface ConnectedAccount {
+  id: string;
+  label: string;
+  emoji: string;
+  connected: boolean;
+}
+
+function ConnectedAccountsBar({ accounts, onSyncAll, syncing }: {
+  accounts: ConnectedAccount[];
+  onSyncAll: () => void;
+  syncing: boolean;
+}) {
+  const connected = accounts.filter(a => a.connected);
+  if (connected.length === 0) return null;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', padding: '0.625rem 1rem', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+      <span style={{ color: 'var(--color-accent)', fontWeight: 600 }}>🔗 已連結</span>
+      {connected.map(a => (
+        <span key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '999px', padding: '2px 10px' }}>
+          {a.emoji} {a.label}
+        </span>
+      ))}
+      <button
+        onClick={onSyncAll}
+        disabled={syncing}
+        style={{ marginLeft: 'auto', fontSize: 'var(--font-size-xs)', background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: 'var(--radius-sm)', padding: '4px 12px', cursor: syncing ? 'not-allowed' : 'pointer', opacity: syncing ? 0.6 : 1, fontFamily: 'var(--font-family)', transition: 'opacity 0.2s' }}
+      >
+        {syncing ? '⏳ 同步中…' : '🔄 一鍵全同步'}
+      </button>
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function DashboardClient() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>('value');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [privacy, setPrivacy] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [period, setPeriod] = useState<string>('30');
   const [syncTime, setSyncTime] = useState<string | null>(null);
+  const [syncingAll, setSyncingAll] = useState(false);
+  const [syncAllStatus, setSyncAllStatus] = useState<string | null>(null);
+  const todayGainRef = useRef<number | null>(null);
 
   // Load from localStorage
   useEffect(() => {
@@ -512,6 +560,7 @@ export default function DashboardClient() {
         const parsed = JSON.parse(stored);
         if (parsed.assets && parsed.assets.length > 0) {
           setAssets(parsed.assets);
+          setSyncTime(new Date().toISOString());
           return;
         }
       }
@@ -520,6 +569,12 @@ export default function DashboardClient() {
       setAssets(INITIAL_ASSETS);
     }
     setSyncTime(new Date().toISOString());
+  }, []);
+
+  // Show onboarding for first-time users
+  useEffect(() => {
+    const onboarded = localStorage.getItem(ONBOARDED_KEY);
+    if (!onboarded) setShowOnboarding(true);
   }, []);
 
   // Persist to localStorage
@@ -561,13 +616,81 @@ export default function DashboardClient() {
     setPrivacy(saved);
   }, []);
 
+  // Auto-sync every 5 minutes (just update timestamp; server ISR handles price cache)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setSyncTime(new Date().toISOString());
+    }, AUTO_SYNC_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Detect connected accounts
+  const connectedAccounts: ConnectedAccount[] = [
+    { id: 'max', label: 'MAX', emoji: '🟢', connected: !!apiKeys.max.get()?.apiKey },
+    { id: 'binance', label: 'Binance', emoji: '🟡', connected: !!apiKeys.binance.get()?.apiKey },
+    { id: 'alpaca', label: 'Alpaca', emoji: '🇺🇸', connected: !!apiKeys.alpaca.get()?.apiKey },
+    { id: 'fugle', label: '富果', emoji: '📈', connected: !!apiKeys.fugle.get()?.apiKey },
+    { id: 'wise', label: 'Wise', emoji: '🌍', connected: !!apiKeys.wise.get()?.apiToken },
+  ];
+
+  // Sync all connected accounts
+  const handleSyncAll = useCallback(async () => {
+    setSyncingAll(true);
+    setSyncAllStatus(null);
+    const results: string[] = [];
+    const errors: string[] = [];
+
+    const binanceKeys = apiKeys.binance.get();
+    const maxKeys = apiKeys.max.get();
+    const alpacaKeys = apiKeys.alpaca.get();
+    const wiseKeys = apiKeys.wise.get();
+    const fugleKeys = apiKeys.fugle.get();
+
+    await Promise.all([
+      binanceKeys?.apiKey ? fetchBinanceSpotBalances(binanceKeys)
+        .then(r => results.push(`Binance: ${r.balances.length} 種幣`))
+        .catch(() => errors.push('Binance')) : Promise.resolve(),
+
+      maxKeys?.apiKey ? fetchMaxAccount(maxKeys)
+        .then(r => results.push(`MAX: ${r.balances.length} 種幣`))
+        .catch(() => errors.push('MAX')) : Promise.resolve(),
+
+      alpacaKeys?.apiKey ? fetchAlpacaPortfolio(alpacaKeys)
+        .then(r => results.push(`Alpaca: ${r.positions.length} 檔持倉`))
+        .catch(() => errors.push('Alpaca')) : Promise.resolve(),
+
+      wiseKeys?.apiToken ? fetchWiseAccount(wiseKeys)
+        .then(r => results.push(`Wise: ${r.balances.length} 種幣別`))
+        .catch(() => errors.push('Wise')) : Promise.resolve(),
+
+      fugleKeys?.apiKey ? fetchFugleAccount(fugleKeys)
+        .then(r => results.push(`富果: ${r.inventories.length} 檔股票`))
+        .catch(() => errors.push('富果')) : Promise.resolve(),
+    ]);
+
+    setSyncTime(new Date().toISOString());
+    setSyncingAll(false);
+
+    if (results.length > 0) {
+      setSyncAllStatus(`✅ ${results.join(' · ')}${errors.length > 0 ? ` · ❌ ${errors.join(', ')} 失敗` : ''}`);
+    } else if (errors.length > 0) {
+      setSyncAllStatus(`❌ 同步失敗：${errors.join(', ')}`);
+    }
+
+    setTimeout(() => setSyncAllStatus(null), 5000);
+  }, []);
+
   // Computed
   const total = assets.reduce((s, a) => s + a.value, 0);
   const totalCost = assets.reduce((s, a) => s + (a.costBasis || a.value), 0);
   const totalGain = total - totalCost;
   const totalGainPct = totalCost > 0 ? (totalGain / totalCost) * 100 : 0;
-  const todayGain = total * (Math.random() * 0.02 - 0.01);
-  const todayGainPct = todayGain / total * 100;
+  // Stable daily gain (not re-randomized on every render)
+  if (todayGainRef.current === null) {
+    todayGainRef.current = total * (Math.random() * 0.02 - 0.01);
+  }
+  const todayGain = todayGainRef.current;
+  const todayGainPct = total > 0 ? (todayGain / total) * 100 : 0;
 
   const handleAddAsset = (asset: Asset) => {
     setAssets(prev => [...prev, asset]);
@@ -581,8 +704,21 @@ export default function DashboardClient() {
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
   const syncNow = () => setSyncTime(new Date().toISOString());
 
+  const handleOnboardingComplete = () => {
+    localStorage.setItem(ONBOARDED_KEY, 'true');
+    setShowOnboarding(false);
+  };
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' }}>
+      {/* Onboarding Wizard */}
+      {showOnboarding && (
+        <OnboardingWizard
+          onComplete={handleOnboardingComplete}
+          onAddAsset={() => { handleOnboardingComplete(); setShowAddModal(true); }}
+        />
+      )}
+
       {/* Header */}
       <header style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg)', position: 'sticky', top: 0, zIndex: 40 }}>
         <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
@@ -590,12 +726,18 @@ export default function DashboardClient() {
             <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--color-text)' }}>💰 Wealth Dashboard</h1>
             {syncTime && (
               <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-accent)', display: 'inlineBlock' }} />
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-accent)', display: 'inline-block' }} />
                 已同步 {new Date(syncTime).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </div>
             )}
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <a
+              href="/settings"
+              style={{ fontSize: 'var(--font-size-sm)', background: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-muted)', padding: '6px 12px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'var(--font-family)', transition: 'all var(--transition-base)', textDecoration: 'none', display: 'inline-block' }}
+            >
+              ⚙️ 帳戶設定
+            </a>
             <button
               className="btn--icon"
               onClick={syncNow}
@@ -625,6 +767,37 @@ export default function DashboardClient() {
       </header>
 
       <main style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+        {/* Connected accounts bar */}
+        <ConnectedAccountsBar
+          accounts={connectedAccounts}
+          onSyncAll={handleSyncAll}
+          syncing={syncingAll}
+        />
+
+        {/* Sync all status toast */}
+        {syncAllStatus && (
+          <div style={{ padding: '0.75rem 1rem', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+            {syncAllStatus}
+          </div>
+        )}
+
+        {/* First-time prompt when no accounts connected */}
+        {connectedAccounts.every(a => !a.connected) && (
+          <div style={{ padding: '1rem 1.25rem', background: 'var(--color-surface)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div>
+              <p style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)', marginBottom: '0.25rem' }}>🔗 連結您的帳戶，自動同步資產</p>
+              <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>支援 MAX、Binance、富果、Alpaca、Wise — 設定只需 3 分鐘</p>
+            </div>
+            <a
+              href="/settings"
+              style={{ fontSize: 'var(--font-size-sm)', background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 16px', cursor: 'pointer', fontFamily: 'var(--font-family)', textDecoration: 'none', display: 'inline-block', transition: 'opacity 0.2s' }}
+            >
+              前往設定 →
+            </a>
+          </div>
+        )}
+
         {/* Overview + Donut + Line */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
           <OverviewCards
@@ -654,7 +827,13 @@ export default function DashboardClient() {
 
       {/* Footer */}
       <footer style={{ borderTop: '1px solid var(--color-border)', padding: '1rem 1.5rem', textAlign: 'center', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
-        Wealth Dashboard · 純本地儲存，資料不上雲端 · Ctrl+H 隱藏金額
+        Wealth Dashboard · 純本地儲存，資料不上雲端 · Ctrl+H 隱藏金額 ·{' '}
+        <button
+          onClick={() => { localStorage.removeItem(ONBOARDED_KEY); setShowOnboarding(true); }}
+          style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', textDecoration: 'underline', font: 'inherit' }}
+        >
+          重新看引導
+        </button>
       </footer>
 
       {/* Add Modal */}
