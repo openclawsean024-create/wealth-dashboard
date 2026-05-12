@@ -9,6 +9,11 @@ import { fetchAlpacaPortfolio } from '@/lib/alpaca';
 import { fetchWiseAccount } from '@/lib/wise';
 import { fetchMaxAccount } from '@/lib/max';
 import { fetchFugleAccount } from '@/lib/fugle';
+import { fetchOkxAccount } from '@/lib/okx';
+import {
+  convertBinanceToAssets, convertMaxToAssets, convertAlpacaToAssets,
+  convertFugleToAssets, convertWiseToAssets, convertOkxToAssets, mergeAssets,
+} from '@/lib/sync-to-assets';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 export interface Asset {
@@ -20,6 +25,8 @@ export interface Asset {
   currency: string;
   institution?: string;
   updatedAt: string;
+  /** API source tag — used to replace assets on re-sync without touching manual entries */
+  source?: 'binance' | 'max' | 'okx' | 'alpaca' | 'fugle' | 'wise';
 }
 
 type SortKey = 'value' | 'name' | 'category';
@@ -332,22 +339,35 @@ function OverviewCards({ total, todayGain, todayGainPct, assetCount, syncTime, p
   );
 }
 
+const SOURCE_LABELS: Record<string, string> = {
+  binance: 'Binance', max: 'MAX', okx: 'OKX',
+  alpaca: 'Alpaca', fugle: '富果', wise: 'Wise',
+};
+
 // Asset Row
 function AssetRow({ asset, privacy }: { asset: Asset; privacy: boolean }) {
   const gain = asset.value - (asset.costBasis || asset.value);
   const gainPct = (asset.costBasis || asset.value) > 0 ? (gain / (asset.costBasis || asset.value)) * 100 : 0;
   const gainColor = gain >= 0 ? 'var(--color-accent)' : 'var(--color-danger)';
+  const sourceLabel = asset.source ? SOURCE_LABELS[asset.source] : null;
 
   return (
     <div className="asset-row">
-      <div>
-        <span className="asset-row__name">{asset.name}</span>
-        <span className="asset-row__category">{CATEGORY_LABELS[asset.category]}</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <span className="asset-row__name">{asset.name}</span>
+          {sourceLabel && (
+            <span style={{ fontSize: '0.625rem', background: 'var(--color-primary)', color: 'white', padding: '1px 6px', borderRadius: '999px', opacity: 0.85, whiteSpace: 'nowrap' }}>
+              {sourceLabel}
+            </span>
+          )}
+        </div>
+        <span className="asset-row__category">{CATEGORY_LABELS[asset.category]}{asset.institution ? ` · ${asset.institution}` : ''}</span>
       </div>
       <div className={`asset-row__value ${privacy ? 'privacy-value' : ''}`}>
         {privacy ? '••••••' : `${CURRENCY_SYMBOL[asset.currency] || '$'}${vr(asset.value)}`}
       </div>
-      <div className={`asset-row__pl ${gain >= 0 ? 'asset-row__pl--positive' : 'asset-row__pl--negative'} ${privacy ? 'privacy-value' : ''}`}>
+      <div className={`asset-row__pl ${gain >= 0 ? 'asset-row__pl--positive' : 'asset-row__pl--negative'} ${privacy ? 'privacy-value' : ''}`} style={{ color: gainColor }}>
         {privacy ? '••••' : fmtGain(gainPct)}
       </div>
     </div>
@@ -628,12 +648,13 @@ export default function DashboardClient() {
   const connectedAccounts: ConnectedAccount[] = [
     { id: 'max', label: 'MAX', emoji: '🟢', connected: !!apiKeys.max.get()?.apiKey },
     { id: 'binance', label: 'Binance', emoji: '🟡', connected: !!apiKeys.binance.get()?.apiKey },
+    { id: 'okx', label: 'OKX', emoji: '🔵', connected: !!apiKeys.okx.get()?.apiKey },
     { id: 'alpaca', label: 'Alpaca', emoji: '🇺🇸', connected: !!apiKeys.alpaca.get()?.apiKey },
     { id: 'fugle', label: '富果', emoji: '📈', connected: !!apiKeys.fugle.get()?.apiKey },
     { id: 'wise', label: 'Wise', emoji: '🌍', connected: !!apiKeys.wise.get()?.apiToken },
   ];
 
-  // Sync all connected accounts
+  // Sync all connected accounts — fetches real data and updates the asset list
   const handleSyncAll = useCallback(async () => {
     setSyncingAll(true);
     setSyncAllStatus(null);
@@ -642,42 +663,79 @@ export default function DashboardClient() {
 
     const binanceKeys = apiKeys.binance.get();
     const maxKeys = apiKeys.max.get();
+    const okxKeys = apiKeys.okx.get();
     const alpacaKeys = apiKeys.alpaca.get();
     const wiseKeys = apiKeys.wise.get();
     const fugleKeys = apiKeys.fugle.get();
 
-    await Promise.all([
-      binanceKeys?.apiKey ? fetchBinanceSpotBalances(binanceKeys)
-        .then(r => results.push(`Binance: ${r.balances.length} 種幣`))
-        .catch(() => errors.push('Binance')) : Promise.resolve(),
+    // Run all syncs in parallel, collect converted assets per source
+    const [binanceAssets, maxAssets, okxAssets, alpacaAssets, fugleAssets, wiseAssets] =
+      await Promise.all([
+        binanceKeys?.apiKey
+          ? fetchBinanceSpotBalances(binanceKeys)
+              .then(r => convertBinanceToAssets(r)
+                .then(a => { results.push(`Binance: ${a.length} 筆`); return a; }))
+              .catch(() => { errors.push('Binance'); return [] as Asset[]; })
+          : Promise.resolve(null),
 
-      maxKeys?.apiKey ? fetchMaxAccount(maxKeys)
-        .then(r => results.push(`MAX: ${r.balances.length} 種幣`))
-        .catch(() => errors.push('MAX')) : Promise.resolve(),
+        maxKeys?.apiKey
+          ? fetchMaxAccount(maxKeys)
+              .then(r => convertMaxToAssets(r)
+                .then(a => { results.push(`MAX: ${a.length} 筆`); return a; }))
+              .catch(() => { errors.push('MAX'); return [] as Asset[]; })
+          : Promise.resolve(null),
 
-      alpacaKeys?.apiKey ? fetchAlpacaPortfolio(alpacaKeys)
-        .then(r => results.push(`Alpaca: ${r.positions.length} 檔持倉`))
-        .catch(() => errors.push('Alpaca')) : Promise.resolve(),
+        okxKeys?.apiKey
+          ? fetchOkxAccount(okxKeys)
+              .then(r => convertOkxToAssets(r)
+                .then(a => { results.push(`OKX: ${a.length} 筆`); return a; }))
+              .catch(() => { errors.push('OKX'); return [] as Asset[]; })
+          : Promise.resolve(null),
 
-      wiseKeys?.apiToken ? fetchWiseAccount(wiseKeys)
-        .then(r => results.push(`Wise: ${r.balances.length} 種幣別`))
-        .catch(() => errors.push('Wise')) : Promise.resolve(),
+        alpacaKeys?.apiKey
+          ? fetchAlpacaPortfolio(alpacaKeys)
+              .then(r => { const a = convertAlpacaToAssets(r); results.push(`Alpaca: ${a.length} 筆`); return a; })
+              .catch(() => { errors.push('Alpaca'); return [] as Asset[]; })
+          : Promise.resolve(null),
 
-      fugleKeys?.apiKey ? fetchFugleAccount(fugleKeys)
-        .then(r => results.push(`富果: ${r.inventories.length} 檔股票`))
-        .catch(() => errors.push('富果')) : Promise.resolve(),
-    ]);
+        fugleKeys?.apiKey
+          ? fetchFugleAccount(fugleKeys)
+              .then(r => { const a = convertFugleToAssets(r); results.push(`富果: ${a.length} 筆`); return a; })
+              .catch(() => { errors.push('富果'); return [] as Asset[]; })
+          : Promise.resolve(null),
+
+        wiseKeys?.apiToken
+          ? fetchWiseAccount(wiseKeys)
+              .then(r => { const a = convertWiseToAssets(r); results.push(`Wise: ${a.length} 筆`); return a; })
+              .catch(() => { errors.push('Wise'); return [] as Asset[]; })
+          : Promise.resolve(null),
+      ]);
+
+    // Merge synced assets into current assets state
+    setAssets(prev => {
+      let next = prev;
+      if (binanceAssets) next = mergeAssets(next, binanceAssets, 'binance');
+      if (maxAssets)     next = mergeAssets(next, maxAssets, 'max');
+      if (okxAssets)     next = mergeAssets(next, okxAssets, 'okx');
+      if (alpacaAssets)  next = mergeAssets(next, alpacaAssets, 'alpaca');
+      if (fugleAssets)   next = mergeAssets(next, fugleAssets, 'fugle');
+      if (wiseAssets)    next = mergeAssets(next, wiseAssets, 'wise');
+      return next;
+    });
 
     setSyncTime(new Date().toISOString());
     setSyncingAll(false);
 
     if (results.length > 0) {
-      setSyncAllStatus(`✅ ${results.join(' · ')}${errors.length > 0 ? ` · ❌ ${errors.join(', ')} 失敗` : ''}`);
+      const errPart = errors.length > 0 ? ` · ❌ ${errors.join(', ')} 失敗` : '';
+      setSyncAllStatus(`✅ 已更新 — ${results.join(' · ')}${errPart}`);
     } else if (errors.length > 0) {
       setSyncAllStatus(`❌ 同步失敗：${errors.join(', ')}`);
+    } else {
+      setSyncAllStatus('尚未設定任何帳戶，請至 ⚙️ 帳戶設定 連結您的帳戶');
     }
 
-    setTimeout(() => setSyncAllStatus(null), 5000);
+    setTimeout(() => setSyncAllStatus(null), 6000);
   }, []);
 
   // Computed

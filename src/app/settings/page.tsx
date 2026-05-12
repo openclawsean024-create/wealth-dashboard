@@ -7,6 +7,8 @@ import { fetchAlpacaPortfolio, type AlpacaPortfolio } from '@/lib/alpaca';
 import { fetchWiseAccount, type WiseAccount } from '@/lib/wise';
 import { fetchMaxAccount, type MaxAccount } from '@/lib/max';
 import { fetchFugleAccount, type FugleAccount } from '@/lib/fugle';
+import { fetchOkxAccount } from '@/lib/okx';
+import type { OkxAccount } from '@/lib/sync-to-assets';
 
 type SyncStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -16,6 +18,7 @@ interface SyncState {
   wise: SyncStatus;
   max: SyncStatus;
   fugle: SyncStatus;
+  okx: SyncStatus;
 }
 
 interface SyncResult {
@@ -24,6 +27,7 @@ interface SyncResult {
   wise?: WiseAccount;
   max?: MaxAccount;
   fugle?: FugleAccount;
+  okx?: OkxAccount;
   error?: string;
 }
 
@@ -169,8 +173,13 @@ export default function SettingsPage() {
   // Fugle
   const [fugleApiKey, setFugleApiKey] = useState('');
 
+  // OKX
+  const [okxApiKey, setOkxApiKey] = useState('');
+  const [okxSecret, setOkxSecret] = useState('');
+  const [okxPassphrase, setOkxPassphrase] = useState('');
+
   const [syncState, setSyncState] = useState<SyncState>({
-    binance: 'idle', alpaca: 'idle', wise: 'idle', max: 'idle', fugle: 'idle',
+    binance: 'idle', alpaca: 'idle', wise: 'idle', max: 'idle', fugle: 'idle', okx: 'idle',
   });
   const [syncResults, setSyncResults] = useState<SyncResult>({});
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -186,6 +195,8 @@ export default function SettingsPage() {
     if (m) { setMaxApiKey(m.apiKey); setMaxSecret(m.secretKey); }
     const f = apiKeys.fugle.get();
     if (f) { setFugleApiKey(f.apiKey); }
+    const o = apiKeys.okx.get();
+    if (o) { setOkxApiKey(o.apiKey); setOkxSecret(o.secretKey); setOkxPassphrase(o.passphrase); }
   }, []);
 
   // ── Save handlers ──────────────────────────────────────────────────
@@ -194,6 +205,7 @@ export default function SettingsPage() {
   const saveWise = () => apiKeys.wise.set({ apiToken: wiseToken.trim(), profileId: wiseProfileId.trim() });
   const saveMax = () => apiKeys.max.set({ apiKey: maxApiKey.trim(), secretKey: maxSecret.trim() });
   const saveFugle = () => apiKeys.fugle.set({ apiKey: fugleApiKey.trim() });
+  const saveOkx = () => apiKeys.okx.set({ apiKey: okxApiKey.trim(), secretKey: okxSecret.trim(), passphrase: okxPassphrase.trim() });
 
   // ── Sync handlers ──────────────────────────────────────────────────
   const setStatus = (platform: keyof SyncState, s: SyncStatus) =>
@@ -274,9 +286,24 @@ export default function SettingsPage() {
     }
   };
 
+  const handleSyncOkx = async () => {
+    saveOkx();
+    const keys = apiKeys.okx.get();
+    if (!keys?.apiKey) return setSyncError('請先填入 OKX API Key');
+    setStatus('okx', 'loading'); setSyncError(null);
+    try {
+      const result = await fetchOkxAccount(keys);
+      setSyncResults(p => ({ ...p, okx: result }));
+      setStatus('okx', 'success');
+    } catch (err: unknown) {
+      setSyncError((err as Error).message ?? '同步失敗');
+      setStatus('okx', 'error');
+    }
+  };
+
   const handleClearAll = () => {
     if (!confirm('確定要清除所有 API Key 嗎？這個動作無法復原。')) return;
-    ['binance', 'alpaca', 'wise', 'max', 'fugle'].forEach(k =>
+    ['binance', 'alpaca', 'wise', 'max', 'fugle', 'okx'].forEach(k =>
       (apiKeys as Record<string, { clear: () => void }>)[k].clear()
     );
     setBinanceApiKey(''); setBinanceSecret('');
@@ -284,8 +311,9 @@ export default function SettingsPage() {
     setWiseToken(''); setWiseProfileId('');
     setMaxApiKey(''); setMaxSecret('');
     setFugleApiKey('');
+    setOkxApiKey(''); setOkxSecret(''); setOkxPassphrase('');
     setSyncResults({});
-    setSyncState({ binance: 'idle', alpaca: 'idle', wise: 'idle', max: 'idle', fugle: 'idle' });
+    setSyncState({ binance: 'idle', alpaca: 'idle', wise: 'idle', max: 'idle', fugle: 'idle', okx: 'idle' });
   };
 
   // ── Shared button styles ───────────────────────────────────────────
@@ -425,6 +453,53 @@ export default function SettingsPage() {
               )}
               <p className="text-xs text-[#6E7681]">
                 同步時間：{new Date(syncResults.fugle.syncedAt).toLocaleString('zh-TW')}
+              </p>
+            </ResultCard>
+          )}
+        </Section>
+
+        {/* ── OKX ──────────────────────────────────────────────── */}
+        <Section
+          id="okx"
+          emoji="🔵"
+          title="OKX 交易所（全球）"
+          subtitle="全球前三大加密貨幣交易所，讀取現貨/合約帳戶"
+          status={syncState.okx}
+        >
+          <HowToGuide>
+            <GuideStep num={1} text='前往 <a href="https://www.okx.com" target="_blank" class="underline text-[#58A6FF]">okx.com</a> 並登入' />
+            <GuideStep num={2} text='點右上角頭像 → <strong class="text-white">API</strong>' />
+            <GuideStep num={3} text='點「建立 API 金鑰」，選擇「用於閱讀」類型' />
+            <GuideStep num={4} text='設定您的 <strong class="text-white">Passphrase</strong>（自定義密碼，需記住）' />
+            <GuideStep num={5} text='只勾選「讀取」權限，完成 2FA，複製 API Key、Secret Key 和 Passphrase 到下方' />
+          </HowToGuide>
+
+          <Field label="API Key" value={okxApiKey} onChange={setOkxApiKey} placeholder="例：abc123xyz..." />
+          <Field label="Secret Key" type="password" value={okxSecret} onChange={setOkxSecret} placeholder="例：xyz789..." />
+          <Field label="Passphrase" type="password" value={okxPassphrase} onChange={setOkxPassphrase} placeholder="您建立 API 時設定的 Passphrase" />
+
+          <div className="flex gap-3">
+            <button onClick={saveOkx} className={saveBtn}>儲存</button>
+            <button
+              onClick={handleSyncOkx}
+              disabled={syncState.okx === 'loading'}
+              className={syncBtn('bg-[#3B82F6] text-white', syncState.okx === 'loading')}
+            >
+              {syncState.okx === 'loading' ? '⏳ 同步中…' : '🔄 同步餘額'}
+            </button>
+          </div>
+
+          {syncResults.okx && (
+            <ResultCard>
+              <p className="text-xs text-[#8B949E]">✅ 找到 {syncResults.okx.balances.length} 種資產</p>
+              {syncResults.okx.balances.slice(0, 8).map(b => (
+                <ResultRow key={b.currency} label={b.currency} value={b.total.toFixed(6)} />
+              ))}
+              {syncResults.okx.balances.length > 8 && (
+                <p className="text-xs text-[#8B949E]">…還有 {syncResults.okx.balances.length - 8} 種</p>
+              )}
+              <p className="text-xs text-[#6E7681]">
+                同步時間：{new Date(syncResults.okx.syncedAt).toLocaleString('zh-TW')}
               </p>
             </ResultCard>
           )}

@@ -8,6 +8,7 @@ const KEYS = {
   wise: 'wd_wise_keys',
   max: 'wd_max_keys',
   fugle: 'wd_fugle_keys',
+  okx: 'wd_okx_keys',
 } as const;
 
 export interface BinanceKeys {
@@ -32,6 +33,12 @@ export interface MaxKeys {
 
 export interface FugleKeys {
   apiKey: string;
+}
+
+export interface OkxKeys {
+  apiKey: string;
+  secretKey: string;
+  passphrase: string;
 }
 
 function load<T>(key: string): T | null {
@@ -74,5 +81,10 @@ export const apiKeys = {
     get: (): FugleKeys | null => load<FugleKeys>(KEYS.fugle),
     set: (keys: FugleKeys) => save(KEYS.fugle, keys),
     clear: () => typeof window !== 'undefined' && localStorage.removeItem(KEYS.fugle),
+  },
+  okx: {
+    get: (): OkxKeys | null => load<OkxKeys>(KEYS.okx),
+    set: (keys: OkxKeys) => save(KEYS.okx, keys),
+    clear: () => typeof window !== 'undefined' && localStorage.removeItem(KEYS.okx),
   },
 };
