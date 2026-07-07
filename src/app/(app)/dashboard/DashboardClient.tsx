@@ -495,8 +495,14 @@ function DataActions({ assets, onImport }: { assets: Asset[]; onImport: (assets:
 }
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
-export default function DashboardClient() {
-  const [assets, setAssets] = useState<Asset[]>([]);
+export default function DashboardClient({
+  userEmail,
+  initialAssets,
+}: {
+  userEmail: string;
+  initialAssets: Asset[];
+}) {
+  const [assets, setAssets] = useState<Asset[]>(initialAssets);
   const [sortKey, setSortKey] = useState<SortKey>('value');
   const [showAddModal, setShowAddModal] = useState(false);
   const [privacy, setPrivacy] = useState(false);
@@ -504,21 +510,8 @@ export default function DashboardClient() {
   const [period, setPeriod] = useState<string>('30');
   const [syncTime, setSyncTime] = useState<string | null>(null);
 
-  // Load from localStorage
+  // 已從 server 拿到 initial assets — 不再從 localStorage 覆蓋
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.assets && parsed.assets.length > 0) {
-          setAssets(parsed.assets);
-          return;
-        }
-      }
-      setAssets(INITIAL_ASSETS);
-    } catch {
-      setAssets(INITIAL_ASSETS);
-    }
     setSyncTime(new Date().toISOString());
   }, []);
 
@@ -569,8 +562,32 @@ export default function DashboardClient() {
   const todayGain = total * (Math.random() * 0.02 - 0.01);
   const todayGainPct = todayGain / total * 100;
 
-  const handleAddAsset = (asset: Asset) => {
-    setAssets(prev => [...prev, asset]);
+  const handleAddAsset = async (asset: Asset) => {
+    try {
+      const res = await fetch("/api/assets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: asset.name,
+          value: asset.value,
+          costBasis: asset.costBasis ?? null,
+          category: asset.category,
+          currency: asset.currency,
+          institution: asset.institution ?? null,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error ?? "新增失敗");
+        return;
+      }
+      const { asset: created } = await res.json();
+      setAssets(prev => [...prev, { ...created, costBasis: created.costBasis ?? undefined, institution: created.institution ?? undefined, updatedAt: created.updatedAt }]);
+      setSyncTime(new Date().toISOString());
+    } catch (e) {
+      console.error("add asset failed:", e);
+      alert("網路錯誤，新增失敗");
+    }
   };
 
   const handleImport = (imported: Asset[]) => {
@@ -579,7 +596,29 @@ export default function DashboardClient() {
   };
 
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
-  const syncNow = () => setSyncTime(new Date().toISOString());
+  const syncNow = async () => {
+    try {
+      const res = await fetch("/api/assets", { cache: "no-store" });
+      if (!res.ok) throw new Error("sync failed");
+      const data = await res.json();
+      setAssets((data.assets ?? []).map((a: any) => ({
+        id: a.id,
+        name: a.name,
+        value: a.value,
+        costBasis: a.costBasis ?? undefined,
+        category: a.category,
+        currency: a.currency,
+        institution: a.institution ?? undefined,
+        symbol: a.symbol ?? undefined,
+        quantity: a.quantity ?? undefined,
+        avgPrice: a.avgPrice ?? undefined,
+        updatedAt: a.updatedAt,
+      })));
+      setSyncTime(new Date().toISOString());
+    } catch (e) {
+      console.error("sync failed:", e);
+    }
+  };
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' }}>
@@ -620,6 +659,23 @@ export default function DashboardClient() {
             >
               {theme === 'dark' ? '☀️ 淺色' : '🌙 深色'}
             </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '4px 10px 4px 12px', borderRadius: 'var(--radius-md)', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)' }}>
+              <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg, #6366F1, #10B981)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>
+                {userEmail.charAt(0).toUpperCase()}
+              </div>
+              <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text)', fontWeight: 500, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {userEmail}
+              </span>
+            </div>
+            <form action="/api/auth/signout" method="post">
+              <button
+                type="submit"
+                title="登出"
+                style={{ fontSize: 'var(--font-size-sm)', background: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-muted)', padding: '6px 12px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'var(--font-family)', transition: 'all var(--transition-base)' }}
+              >
+                登出
+              </button>
+            </form>
           </div>
         </div>
       </header>
