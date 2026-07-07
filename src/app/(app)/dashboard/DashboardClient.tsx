@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import Link from 'next/link';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Area, AreaChart } from 'recharts';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -18,6 +19,34 @@ export interface Asset {
 type SortKey = 'value' | 'name' | 'category';
 type DisplayCurrency = 'TWD' | 'USD';
 type TimeInterval = '7' | '30' | '90' | '365';
+
+// ─── Plan Badge Component ────────────────────────────────────────────────────
+function PlanBadge({ plan }: { plan: 'free' | 'pro' | 'business' }) {
+  const config = {
+    free: { label: '免費版', color: '#94A3B8', bg: 'rgba(148,163,184,0.1)', border: 'rgba(148,163,184,0.3)' },
+    pro: { label: '⭐ Pro', color: '#10B981', bg: 'rgba(16,185,129,0.15)', border: 'rgba(16,185,129,0.4)' },
+    business: { label: '🏢 Business', color: '#8B5CF6', bg: 'rgba(139,92,246,0.15)', border: 'rgba(139,92,246,0.4)' },
+  }[plan];
+
+  return (
+    <Link
+      href={plan === 'free' ? '/checkout?plan=pro' : '/checkout'}
+      title={plan === 'free' ? '點擊升級 Pro' : '管理訂閱'}
+      style={{
+        fontSize: 'var(--font-size-sm)',
+        padding: '4px 10px',
+        borderRadius: 'var(--radius-md)',
+        background: config.bg,
+        border: `1px solid ${config.border}`,
+        color: config.color,
+        fontWeight: 600,
+        textDecoration: 'none',
+      }}
+    >
+      {config.label}
+    </Link>
+  );
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STORAGE_KEY = 'wd_v4';
@@ -507,9 +536,15 @@ function DataActions({ assets, onImport }: { assets: Asset[]; onImport: (assets:
 export default function DashboardClient({
   userEmail,
   initialAssets,
+  plan,
+  justUpgraded,
+  justDowngraded,
 }: {
   userEmail: string;
   initialAssets: Asset[];
+  plan: "free" | "pro" | "business";
+  justUpgraded?: string;
+  justDowngraded?: string;
 }) {
   const [assets, setAssets] = useState<Asset[]>(initialAssets);
   const [sortKey, setSortKey] = useState<SortKey>('value');
@@ -685,6 +720,24 @@ export default function DashboardClient({
             >
               {theme === 'dark' ? '☀️ 淺色' : '🌙 深色'}
             </button>
+            <PlanBadge plan={plan} />
+            {plan === 'free' && assets.length >= 5 && (
+              <Link
+                href="/checkout?plan=pro"
+                style={{
+                  fontSize: 'var(--font-size-sm)',
+                  padding: '6px 12px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'linear-gradient(135deg, #6366F1, #10B981)',
+                  color: 'white',
+                  fontWeight: 600,
+                  textDecoration: 'none',
+                  boxShadow: '0 2px 8px rgba(99,102,241,0.3)',
+                }}
+              >
+                🚀 升級 Pro
+              </Link>
+            )}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '4px 10px 4px 12px', borderRadius: 'var(--radius-md)', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)' }}>
               <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg, #6366F1, #10B981)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>
                 {userEmail.charAt(0).toUpperCase()}
@@ -707,6 +760,56 @@ export default function DashboardClient({
       </header>
 
       <main style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        {/* 升級/降級 toast banner */}
+        {(justUpgraded || justDowngraded) && (
+          <div
+            style={{
+              padding: '1rem 1.25rem',
+              borderRadius: 'var(--radius-lg)',
+              background: justUpgraded
+                ? 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(99,102,241,0.15))'
+                : 'rgba(148,163,184,0.1)',
+              border: justUpgraded
+                ? '1px solid rgba(16,185,129,0.3)'
+                : '1px solid rgba(148,163,184,0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              flexWrap: 'wrap',
+            }}
+          >
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
+                {justUpgraded ? '🎉 升級成功！' : '已降級到免費版'}
+              </div>
+              <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>
+                {justUpgraded
+                  ? `${justUpgraded === 'pro' ? 'Pro' : justUpgraded === 'business' ? 'Business' : '免費版'} 功能已啟用。立即體驗無限資產、即時股價、多幣別換算。`
+                  : '降級成功，超過 6 筆的資產已鎖住。升級 Pro 可重新存取。'}
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.history.replaceState({}, '', '/dashboard');
+                }
+              }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--color-text-muted)',
+                cursor: 'pointer',
+                fontSize: 'var(--font-size-lg)',
+                padding: '4px 8px',
+              }}
+              aria-label="關閉通知"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Overview + Donut + Line */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
           <OverviewCards

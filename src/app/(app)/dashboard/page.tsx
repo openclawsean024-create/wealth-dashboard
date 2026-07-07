@@ -5,11 +5,21 @@ import DashboardClient from "./DashboardClient";
 import type { Asset } from "./DashboardClient";
 
 // Server Component — auth guard + 從 DB 撈用戶資產
-export default async function Page() {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ upgraded?: string; downgraded?: string }>;
+}) {
   const session = await auth();
   if (!session?.user) {
     redirect("/login");
   }
+
+  // 撈 subscription
+  const subscription = await db.subscription.findUnique({
+    where: { userId: session.user.id },
+  });
+  const plan = (subscription?.plan ?? "free") as "free" | "pro" | "business";
 
   // 從雲端 DB 撈這個用戶的資產
   const dbAssets = await db.asset.findMany({
@@ -67,10 +77,17 @@ export default async function Page() {
     }));
   }
 
+  const params = await searchParams;
+  const justUpgraded = params.upgraded;
+  const justDowngraded = params.downgraded;
+
   return (
     <DashboardClient
       userEmail={session.user.email}
       initialAssets={initialAssets}
+      plan={plan}
+      justUpgraded={justUpgraded}
+      justDowngraded={justDowngraded}
     />
   );
 }
