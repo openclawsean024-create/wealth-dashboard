@@ -324,7 +324,7 @@ function OverviewCards({ total, todayGain, todayGainPct, assetCount, syncTime, p
 }
 
 // Asset Row
-function AssetRow({ asset, privacy }: { asset: Asset; privacy: boolean }) {
+function AssetRow({ asset, privacy, onDelete }: { asset: Asset; privacy: boolean; onDelete: (id: string) => void }) {
   const gain = asset.value - (asset.costBasis || asset.value);
   const gainPct = (asset.costBasis || asset.value) > 0 ? (gain / (asset.costBasis || asset.value)) * 100 : 0;
   const gainColor = gain >= 0 ? 'var(--color-accent)' : 'var(--color-danger)';
@@ -341,17 +341,26 @@ function AssetRow({ asset, privacy }: { asset: Asset; privacy: boolean }) {
       <div className={`asset-row__pl ${gain >= 0 ? 'asset-row__pl--positive' : 'asset-row__pl--negative'} ${privacy ? 'privacy-value' : ''}`}>
         {privacy ? '••••' : fmtGain(gainPct)}
       </div>
+      <button
+        className="asset-row__delete"
+        onClick={() => onDelete(asset.id)}
+        title="刪除這筆資產"
+        aria-label="刪除資產"
+      >
+        🗑
+      </button>
     </div>
   );
 }
 
 // Asset List (with sorting + add)
-function AssetList({ assets, sortKey, onSortChange, onAdd, privacy }: {
+function AssetList({ assets, sortKey, onSortChange, onAdd, privacy, onDelete }: {
   assets: Asset[];
   sortKey: SortKey;
   onSortChange: (k: SortKey) => void;
   onAdd: () => void;
   privacy: boolean;
+  onDelete: (id: string) => void;
 }) {
   const sorted = [...assets].sort((a, b) => {
     if (sortKey === 'value') return b.value - a.value;
@@ -375,7 +384,7 @@ function AssetList({ assets, sortKey, onSortChange, onAdd, privacy }: {
           <button className="btn btn--primary" onClick={onAdd}>+ 新增</button>
         </div>
       </div>
-      {sorted.map(a => <AssetRow key={a.id} asset={a} privacy={privacy} />)}
+      {sorted.map(a => <AssetRow key={a.id} asset={a} privacy={privacy} onDelete={onDelete} />)}
     </div>
   );
 }
@@ -590,6 +599,23 @@ export default function DashboardClient({
     }
   };
 
+  const handleDeleteAsset = async (id: string) => {
+    if (!confirm("確定要刪除這筆資產？此操作無法復原。")) return;
+    try {
+      const res = await fetch(`/api/assets/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error ?? "刪除失敗");
+        return;
+      }
+      setAssets(prev => prev.filter(a => a.id !== id));
+      setSyncTime(new Date().toISOString());
+    } catch (e) {
+      console.error("delete asset failed:", e);
+      alert("網路錯誤，刪除失敗");
+    }
+  };
+
   const handleImport = (imported: Asset[]) => {
     setAssets(imported);
     setSyncTime(new Date().toISOString());
@@ -702,6 +728,7 @@ export default function DashboardClient({
           onSortChange={setSortKey}
           onAdd={() => setShowAddModal(true)}
           privacy={privacy}
+          onDelete={handleDeleteAsset}
         />
 
         {/* Import/Export */}
@@ -710,7 +737,7 @@ export default function DashboardClient({
 
       {/* Footer */}
       <footer style={{ borderTop: '1px solid var(--color-border)', padding: '1rem 1.5rem', textAlign: 'center', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
-        Wealth Dashboard · 純本地儲存，資料不上雲端 · Ctrl+H 隱藏金額
+        Wealth Dashboard · 雲端同步 · Ctrl+H 隱藏金額
       </footer>
 
       {/* Add Modal */}
