@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Area, AreaChart } from 'recharts';
+import { formatPrice, FX_SYMBOL, type DisplayCurrency as PriceDisplayCurrency } from '@/lib/prices';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 export interface Asset {
@@ -13,12 +14,72 @@ export interface Asset {
   category: 'cash' | 'stock' | 'fund' | 'crypto' | 'real-estate' | 'other';
   currency: string;
   institution?: string;
+  symbol?: string;
+  quantity?: number;
+  avgPrice?: number;
   updatedAt: string;
 }
 
+export interface Transaction {
+  id: string;
+  userId?: string;
+  assetId?: string | null;
+  type: 'buy' | 'sell' | 'dividend' | 'deposit' | 'withdrawal';
+  amount: number;
+  currency: string;
+  note?: string | null;
+  date: string;
+  createdAt: string;
+}
+
+export interface PriceQuote {
+  symbol: string;
+  price: number;
+  currency: string;
+  change24h: number;
+  asOf: string;
+  source: string;
+  displayPrice?: number;
+  displayCurrency?: string;
+}
+
 type SortKey = 'value' | 'name' | 'category';
-type DisplayCurrency = 'TWD' | 'USD';
+type DisplayCurrency = PriceDisplayCurrency;
 type TimeInterval = '7' | '30' | '90' | '365';
+
+// ─── Symbol → 報價 hook（每 60s 自動更新） ──────────────────────────────────
+function usePricePolling(symbols: string[], display: DisplayCurrency, intervalMs = 60_000) {
+  const [quotes, setQuotes] = useState<Record<string, PriceQuote | { error: string }>>({});
+  const [fetchedAt, setFetchedAt] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetchNow = useCallback(async () => {
+    if (symbols.length === 0) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/prices?symbols=${encodeURIComponent(symbols.join(','))}&display=${display}`, {
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setQuotes(data.quotes ?? {});
+        setFetchedAt(data.fetchedAt);
+      }
+    } catch (e) {
+      console.warn('[price polling] fetch failed', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [symbols.join(','), display]);
+
+  useEffect(() => {
+    fetchNow();
+    const t = setInterval(fetchNow, intervalMs);
+    return () => clearInterval(t);
+  }, [fetchNow, intervalMs]);
+
+  return { quotes, fetchedAt, loading, refetch: fetchNow };
+}
 
 // ─── Plan Badge Component ────────────────────────────────────────────────────
 function PlanBadge({ plan }: { plan: 'free' | 'pro' | 'business' }) {
@@ -549,10 +610,34 @@ export default function DashboardClient({
   const [assets, setAssets] = useState<Asset[]>(initialAssets);
   const [sortKey, setSortKey] = useState<SortKey>('value');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showTxModal, setShowTxModal] = useState(false);
   const [privacy, setPrivacy] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [period, setPeriod] = useState<string>('30');
   const [syncTime, setSyncTime] = useState<string | null>(null);
+  const [display, setDisplay] = useState<DisplayCurrency>('TWD');
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+
+  // 啟動即時報價 polling（每 60s）
+  const symbols = Array.from(new Set(assets.map(a => a.symbol).filter((s): s is string => Boolean(s))));
+  const { quotes, fetchedAt: priceFetchedAt, loading: priceLoading } = usePricePolling(symbols, display);
+
+  // 載入交易紀錄
+  const loadTransactions = useCallback(async () => {
+    try {
+      const res = await fetch('/api/transactions', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        setTransactions(data.transactions ?? []);
+      }
+    } catch (e) {
+      console.warn('[tx] load failed', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTransactions();
+  }, [loadTransactions]);
 
   // 已從 server 拿到 initial assets — 不再從 localStorage 覆蓋
   useEffect(() => {
@@ -606,6 +691,31 @@ export default function DashboardClient({
   const todayGain = total * (Math.random() * 0.02 - 0.01);
   const todayGainPct = todayGain / total * 100;
 
+  // P&L：每個 asset 對成本基礎（cost basis 是原幣，通常是 TWD）
+  // 即時報價只影響 category === 'stock' / 'crypto' 的當前市值
+  const pnlRows = assets.map(a => {
+    const q = a.symbol ? quotes[a.symbol.toUpperCase()] : undefined;
+    const hasQuote = q && !('error' in q);
+    // 即時市值（USD）→ 換算回 TWD：value / 32.5 已是 USD；如需台股 .TW 報價為 TWD 要分開
+    // 簡化：value 已是 TWD（市值），報價為 USD；只對加密 / 美股有意義
+    // cost basis = 原始投入 TWD
+    const currentValueTWD = a.value;
+    const costTWD = a.costBasis ?? a.value;
+    const gainTWD = currentValueTWD - costTWD;
+    const gainPct = costTWD > 0 ? (gainTWD / costTWD) * 100 : 0;
+    return {
+      asset: a,
+      costTWD,
+      currentValueTWD,
+      gainTWD,
+      gainPct,
+      change24hPct: hasQuote ? q.change24h : null,
+    };
+  });
+  const totalPnlTWD = pnlRows.reduce((s, r) => s + r.gainTWD, 0);
+  const winners = pnlRows.filter(r => r.gainTWD > 0).length;
+  const losers = pnlRows.filter(r => r.gainTWD < 0).length;
+
   const handleAddAsset = async (asset: Asset) => {
     try {
       const res = await fetch("/api/assets", {
@@ -654,6 +764,48 @@ export default function DashboardClient({
   const handleImport = (imported: Asset[]) => {
     setAssets(imported);
     setSyncTime(new Date().toISOString());
+  };
+
+  const handleAddTx = async (tx: { assetId?: string | null; type: Transaction['type']; amount: number; currency: string; note?: string; date?: string }) => {
+    try {
+      const res = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tx),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error ?? '新增失敗');
+        if (err.upgrade) {
+          // 提示升級
+          if (confirm('交易紀錄已達方案上限，要升級 Pro 解鎖更多嗎？')) {
+            window.location.href = '/checkout?plan=pro';
+          }
+        }
+        return;
+      }
+      await loadTransactions();
+      setSyncTime(new Date().toISOString());
+    } catch (e) {
+      console.error('add tx failed:', e);
+      alert('網路錯誤，新增失敗');
+    }
+  };
+
+  const handleDeleteTx = async (id: string) => {
+    if (!confirm('確定要刪除這筆交易紀錄？')) return;
+    try {
+      const res = await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error ?? '刪除失敗');
+        return;
+      }
+      await loadTransactions();
+    } catch (e) {
+      console.error('delete tx failed:', e);
+      alert('網路錯誤，刪除失敗');
+    }
   };
 
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
@@ -721,6 +873,33 @@ export default function DashboardClient({
               {theme === 'dark' ? '☀️ 淺色' : '🌙 深色'}
             </button>
             <PlanBadge plan={plan} />
+            {/* 顯示貨幣切換（TWD / USD / BTC / ETH） */}
+            <div style={{ display: 'inline-flex', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 'var(--radius-md)', padding: 2 }}>
+              {(['TWD', 'USD', 'BTC', 'ETH'] as DisplayCurrency[]).map(c => (
+                <button
+                  key={c}
+                  onClick={() => setDisplay(c)}
+                  title={c === 'TWD' ? '新台幣' : c === 'USD' ? '美元' : c === 'BTC' ? 'Bitcoin' : 'Ethereum'}
+                  style={{
+                    fontSize: 'var(--font-size-xs)',
+                    padding: '4px 10px',
+                    borderRadius: 'calc(var(--radius-md) - 4px)',
+                    background: display === c ? 'var(--color-primary)' : 'transparent',
+                    color: display === c ? 'white' : 'var(--color-text-muted)',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontFamily: 'var(--font-family)',
+                    transition: 'all var(--transition-base)',
+                  }}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+            {priceLoading && (
+              <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>📡</span>
+            )}
             {plan === 'free' && assets.length >= 5 && (
               <Link
                 href="/checkout?plan=pro"
@@ -834,6 +1013,28 @@ export default function DashboardClient({
           onDelete={handleDeleteAsset}
         />
 
+        {/* 損益表 P&L */}
+        <PnLPanel
+          pnlRows={pnlRows}
+          totalPnlTWD={totalPnlTWD}
+          totalGainPct={totalGainPct}
+          winners={winners}
+          losers={losers}
+          privacy={privacy}
+          display={display}
+          quotes={quotes}
+        />
+
+        {/* 交易紀錄 */}
+        <TransactionPanel
+          transactions={transactions}
+          assets={assets}
+          onAdd={() => setShowTxModal(true)}
+          onDelete={handleDeleteTx}
+          privacy={privacy}
+          display={display}
+        />
+
         {/* Import/Export */}
         <DataActions assets={assets} onImport={handleImport} />
       </main>
@@ -851,6 +1052,15 @@ export default function DashboardClient({
         />
       )}
 
+      {/* Add Tx Modal */}
+      {showTxModal && (
+        <AddTxModal
+          assets={assets}
+          onClose={() => setShowTxModal(false)}
+          onSave={handleAddTx}
+        />
+      )}
+
       {/* Privacy overlay hint */}
       {privacy && (
         <div style={{ position: 'fixed', bottom: 16, right: 16, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 14px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', boxShadow: 'var(--shadow-md)', fontFamily: 'var(--font-family)', zIndex: 50 }}>
@@ -860,3 +1070,349 @@ export default function DashboardClient({
     </div>
   );
 }
+
+// ─── P&L 損益表面板 ──────────────────────────────────────────────────────────
+interface PnlRow {
+  asset: Asset;
+  costTWD: number;
+  currentValueTWD: number;
+  gainTWD: number;
+  gainPct: number;
+  change24hPct: number | null;
+}
+
+function PnLPanel({
+  pnlRows,
+  totalPnlTWD,
+  totalGainPct,
+  winners,
+  losers,
+  privacy,
+  display,
+  quotes,
+}: {
+  pnlRows: PnlRow[];
+  totalPnlTWD: number;
+  totalGainPct: number;
+  winners: number;
+  losers: number;
+  privacy: boolean;
+  display: DisplayCurrency;
+  quotes: Record<string, PriceQuote | { error: string }>;
+}) {
+  const mask = privacy ? '••••••' : null;
+  const fmt = (v: number) => mask ?? formatPrice(v, display, { decimals: 0 });
+  const totalColor = totalPnlTWD > 0 ? '#10B981' : totalPnlTWD < 0 ? '#EF4444' : 'var(--color-text-muted)';
+
+  return (
+    <section style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', padding: '1.25rem', boxShadow: 'var(--shadow-sm)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <h2 style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: 'var(--color-text)' }}>📊 損益表 (P&L)</h2>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', fontSize: 'var(--font-size-xs)' }}>
+          <span style={{ padding: '3px 8px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 'var(--radius-sm)', color: '#10B981', fontWeight: 600 }}>
+            🟢 {winners} 個獲利
+          </span>
+          <span style={{ padding: '3px 8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 'var(--radius-sm)', color: '#EF4444', fontWeight: 600 }}>
+            🔴 {losers} 個虧損
+          </span>
+        </div>
+      </div>
+
+      {/* 總損益 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
+        <div style={{ padding: '1rem', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 'var(--radius-md)' }}>
+          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginBottom: 4 }}>總損益 ({display})</div>
+          <div style={{ fontSize: '1.5rem', fontWeight: 700, color: totalColor }}>
+            {totalPnlTWD >= 0 ? '+' : ''}{fmt(totalPnlTWD)}
+          </div>
+          <div style={{ fontSize: 'var(--font-size-xs)', color: totalColor, marginTop: 2 }}>
+            {totalGainPct >= 0 ? '+' : ''}{totalGainPct.toFixed(2)}% 總報酬率
+          </div>
+        </div>
+      </div>
+
+      {/* 每個 asset 的損益列 */}
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-sm)' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
+              <th style={{ padding: '0.5rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>資產</th>
+              <th style={{ padding: '0.5rem', color: 'var(--color-text-muted)', fontWeight: 600, textAlign: 'right' }}>成本</th>
+              <th style={{ padding: '0.5rem', color: 'var(--color-text-muted)', fontWeight: 600, textAlign: 'right' }}>現值</th>
+              <th style={{ padding: '0.5rem', color: 'var(--color-text-muted)', fontWeight: 600, textAlign: 'right' }}>損益</th>
+              <th style={{ padding: '0.5rem', color: 'var(--color-text-muted)', fontWeight: 600, textAlign: 'right' }}>報酬率</th>
+              <th style={{ padding: '0.5rem', color: 'var(--color-text-muted)', fontWeight: 600, textAlign: 'right' }}>24h</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pnlRows.map((r) => {
+              const color = r.gainTWD > 0 ? '#10B981' : r.gainTWD < 0 ? '#EF4444' : 'var(--color-text-muted)';
+              const has24h = r.change24hPct != null;
+              const color24h = r.change24hPct! > 0 ? '#10B981' : r.change24hPct! < 0 ? '#EF4444' : 'var(--color-text-muted)';
+              return (
+                <tr key={r.asset.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                  <td style={{ padding: '0.5rem', fontWeight: 500 }}>
+                    {r.asset.name}
+                    {r.asset.symbol && (
+                      <span style={{ marginLeft: 6, fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>({r.asset.symbol})</span>
+                    )}
+                  </td>
+                  <td style={{ padding: '0.5rem', textAlign: 'right' }}>{fmt(r.costTWD)}</td>
+                  <td style={{ padding: '0.5rem', textAlign: 'right' }}>{fmt(r.currentValueTWD)}</td>
+                  <td style={{ padding: '0.5rem', textAlign: 'right', color, fontWeight: 600 }}>
+                    {r.gainTWD >= 0 ? '+' : ''}{fmt(r.gainTWD)}
+                  </td>
+                  <td style={{ padding: '0.5rem', textAlign: 'right', color, fontWeight: 600 }}>
+                    {r.gainPct >= 0 ? '+' : ''}{r.gainPct.toFixed(2)}%
+                  </td>
+                  <td style={{ padding: '0.5rem', textAlign: 'right', color: has24h ? color24h : 'var(--color-text-muted)' }}>
+                    {has24h ? `${r.change24hPct! >= 0 ? '+' : ''}${r.change24hPct!.toFixed(2)}%` : '—'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: '0.75rem', textAlign: 'right' }}>
+        即時報價：{Object.keys(quotes).length === 0 ? '載入中…' : `${Object.keys(quotes).length} 個標的追蹤中`}
+      </div>
+    </section>
+  );
+}
+
+// ─── 交易紀錄面板 ──────────────────────────────────────────────────────────────
+const TX_TYPE_LABELS: Record<Transaction['type'], { label: string; color: string; icon: string }> = {
+  buy: { label: '買入', color: '#10B981', icon: '📈' },
+  sell: { label: '賣出', color: '#EF4444', icon: '📉' },
+  dividend: { label: '股息', color: '#F59E0B', icon: '💰' },
+  deposit: { label: '存入', color: '#3B82F6', icon: '⬇️' },
+  withdrawal: { label: '提出', color: '#8B5CF6', icon: '⬆️' },
+};
+
+function TransactionPanel({
+  transactions,
+  assets,
+  onAdd,
+  onDelete,
+  privacy,
+  display,
+}: {
+  transactions: Transaction[];
+  assets: Asset[];
+  onAdd: () => void;
+  onDelete: (id: string) => void;
+  privacy: boolean;
+  display: DisplayCurrency;
+}) {
+  const mask = privacy ? '••••••' : null;
+  const fmt = (v: number, c: string) => {
+    if (mask) return mask;
+    // tx 是原幣；若 display != 原幣，僅顯示原幣金額 + 標示
+    return `${c === 'TWD' ? 'NT$' : c === 'USD' ? '$' : ''}${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  };
+
+  const assetName = (id?: string | null) => assets.find(a => a.id === id)?.name ?? '—';
+
+  return (
+    <section style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', padding: '1.25rem', boxShadow: 'var(--shadow-sm)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <h2 style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: 'var(--color-text)' }}>
+          📋 交易紀錄 <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 400, color: 'var(--color-text-muted)' }}>({transactions.length})</span>
+        </h2>
+        <button
+          onClick={onAdd}
+          style={{
+            padding: '6px 14px',
+            background: 'var(--color-primary)',
+            color: 'white',
+            border: 'none',
+            borderRadius: 'var(--radius-md)',
+            fontSize: 'var(--font-size-sm)',
+            fontWeight: 600,
+            cursor: 'pointer',
+            fontFamily: 'var(--font-family)',
+          }}
+        >
+          ＋ 新增交易
+        </button>
+      </div>
+
+      {transactions.length === 0 ? (
+        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)' }}>
+          還沒有交易紀錄。點擊「＋ 新增交易」開始記錄買賣、股息、定存。
+        </div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-sm)' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
+                <th style={{ padding: '0.5rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>日期</th>
+                <th style={{ padding: '0.5rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>類型</th>
+                <th style={{ padding: '0.5rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>資產</th>
+                <th style={{ padding: '0.5rem', color: 'var(--color-text-muted)', fontWeight: 600, textAlign: 'right' }}>金額</th>
+                <th style={{ padding: '0.5rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>備註</th>
+                <th style={{ padding: '0.5rem', color: 'var(--color-text-muted)', fontWeight: 600 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {transactions.slice(0, 20).map((tx) => {
+                const meta = TX_TYPE_LABELS[tx.type] ?? TX_TYPE_LABELS.deposit;
+                return (
+                  <tr key={tx.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                    <td style={{ padding: '0.5rem', whiteSpace: 'nowrap' }}>
+                      {new Date(tx.date).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' })}
+                    </td>
+                    <td style={{ padding: '0.5rem' }}>
+                      <span style={{ color: meta.color, fontWeight: 600 }}>{meta.icon} {meta.label}</span>
+                    </td>
+                    <td style={{ padding: '0.5rem' }}>{assetName(tx.assetId)}</td>
+                    <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: 600, color: meta.color }}>
+                      {fmt(tx.amount, tx.currency)}
+                    </td>
+                    <td style={{ padding: '0.5rem', color: 'var(--color-text-muted)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {tx.note ?? '—'}
+                    </td>
+                    <td style={{ padding: '0.5rem' }}>
+                      <button
+                        onClick={() => onDelete(tx.id)}
+                        title="刪除"
+                        style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: '0.875rem', padding: '4px 8px' }}
+                      >
+                        🗑
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {transactions.length > 20 && (
+            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: '0.5rem', textAlign: 'center' }}>
+              顯示前 20 筆，總共 {transactions.length} 筆
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── 新增交易 Modal ──────────────────────────────────────────────────────────
+function AddTxModal({
+  assets,
+  onClose,
+  onSave,
+}: {
+  assets: Asset[];
+  onClose: () => void;
+  onSave: (tx: { assetId?: string | null; type: Transaction['type']; amount: number; currency: string; note?: string; date?: string }) => void;
+}) {
+  const [type, setType] = useState<Transaction['type']>('buy');
+  const [assetId, setAssetId] = useState<string>(assets[0]?.id ?? '');
+  const [amount, setAmount] = useState('');
+  const [currency, setCurrency] = useState('TWD');
+  const [note, setNote] = useState('');
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const num = parseFloat(amount);
+    if (!isFinite(num) || num <= 0) {
+      alert('金額必須是正數');
+      return;
+    }
+    setSubmitting(true);
+    await onSave({
+      assetId: assetId || null,
+      type,
+      amount: num,
+      currency,
+      note: note || undefined,
+      date: new Date(date).toISOString(),
+    });
+    setSubmitting(false);
+    onClose();
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '1rem' }}>
+      <div style={{ background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', padding: '1.5rem', maxWidth: 480, width: '100%', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-lg)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h3 style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700 }}>新增交易紀錄</h3>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: 'var(--color-text-muted)' }}>✕</button>
+        </div>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>類型</span>
+            <select value={type} onChange={(e) => setType(e.target.value as Transaction['type'])} style={selectStyle}>
+              <option value="buy">📈 買入</option>
+              <option value="sell">📉 賣出</option>
+              <option value="dividend">💰 股息 / 配息</option>
+              <option value="deposit">⬇️ 存入</option>
+              <option value="withdrawal">⬆️ 提出</option>
+            </select>
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>關聯資產（選填）</span>
+            <select value={assetId} onChange={(e) => setAssetId(e.target.value)} style={selectStyle}>
+              <option value="">— 不綁定 —</option>
+              {assets.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '0.5rem' }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>金額</span>
+              <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} required style={inputStyle} placeholder="10000" />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>幣別</span>
+              <select value={currency} onChange={(e) => setCurrency(e.target.value)} style={selectStyle}>
+                <option value="TWD">TWD</option>
+                <option value="USD">USD</option>
+                <option value="JPY">JPY</option>
+                <option value="EUR">EUR</option>
+              </select>
+            </label>
+          </div>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>日期</span>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required style={inputStyle} />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>備註（選填）</span>
+            <input type="text" value={note} onChange={(e) => setNote(e.target.value)} style={inputStyle} placeholder="例：定期定額 0050" />
+          </label>
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+            <button type="button" onClick={onClose} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', color: 'var(--color-text-muted)', cursor: 'pointer', fontFamily: 'var(--font-family)' }}>
+              取消
+            </button>
+            <button type="submit" disabled={submitting} style={{ padding: '8px 16px', background: 'var(--color-primary)', border: 'none', borderRadius: 'var(--radius-md)', color: 'white', fontWeight: 600, cursor: submitting ? 'wait' : 'pointer', fontFamily: 'var(--font-family)', opacity: submitting ? 0.6 : 1 }}>
+              {submitting ? '送出中…' : '新增'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+const selectStyle: React.CSSProperties = {
+  padding: '8px 10px',
+  background: 'var(--color-bg)',
+  border: '1px solid var(--color-border)',
+  borderRadius: 'var(--radius-md)',
+  color: 'var(--color-text)',
+  fontSize: 'var(--font-size-sm)',
+  fontFamily: 'var(--font-family)',
+};
+const inputStyle: React.CSSProperties = {
+  padding: '8px 10px',
+  background: 'var(--color-bg)',
+  border: '1px solid var(--color-border)',
+  borderRadius: 'var(--radius-md)',
+  color: 'var(--color-text)',
+  fontSize: 'var(--font-size-sm)',
+  fontFamily: 'var(--font-family)',
+};
