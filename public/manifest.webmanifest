@@ -1,0 +1,42 @@
+{
+  "name": "Wealth Dashboard — 個人資產中心",
+  "short_name": "Wealth",
+  "description": "整合銀行、證券、加密資產於單一儀表板。雲端同步、多幣別、即時報價。",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0a0f",
+  "theme_color": "#10B981",
+  "lang": "zh-TW",
+  "dir": "ltr",
+  "categories": ["finance", "productivity", "business"],
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%2310B981'/%3E%3Ctext x='96' y='138' font-size='110' text-anchor='middle' fill='white' font-family='system-ui' font-weight='800'%3EW%3C/text%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='100' fill='%2310B981'/%3E%3Ctext x='256' y='375' font-size='300' text-anchor='middle' fill='white' font-family='system-ui' font-weight='800'%3EW%3C/text%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "新增資產",
+      "short_name": "新增",
+      "url": "/dashboard?action=add",
+      "description": "快速新增銀行/股票/加密資產"
+    },
+    {
+      "name": "查看損益",
+      "short_name": "損益",
+      "url": "/dashboard?view=pnl",
+      "description": "查看投資組合損益表"
+    }
+  ]
+}

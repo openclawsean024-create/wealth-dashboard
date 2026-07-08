@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0a0f"/>
+      <stop offset="1" stop-color="#1a1d2e"/>
+    </linearGradient>
+    <linearGradient id="emerald" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#10B981"/>
+      <stop offset="1" stop-color="#34D399"/>
+    </linearGradient>
+    <linearGradient id="indigo" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6366F1"/>
+      <stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+
+  <!-- Top brand bar -->
+  <g transform="translate(80,80)">
+    <rect width="72" height="72" rx="16" fill="url(#emerald)"/>
+    <text x="36" y="55" font-size="44" text-anchor="middle" fill="white" font-family="system-ui" font-weight="800">W</text>
+    <text x="96" y="48" font-size="30" fill="white" font-family="system-ui" font-weight="700">Wealth</text>
+    <text x="96" y="78" font-size="18" fill="#10B981" font-family="system-ui" font-weight="500" letter-spacing="1">DASHBOARD</text>
+  </g>
+
+  <!-- Headline -->
+  <text x="80" y="280" font-size="78" font-weight="900" fill="white" font-family="system-ui">看見你的</text>
+  <text x="80" y="365" font-size="78" font-weight="900" fill="url(#emerald)" font-family="system-ui">每一分資產</text>
+
+  <!-- Sub -->
+  <text x="80" y="425" font-size="24" fill="#b8b8c0" font-family="system-ui">銀行 · 股票 · 加密貨幣 · 房地產 整合於單一儀表板</text>
+  <text x="80" y="458" font-size="20" fill="#888" font-family="system-ui">多幣別 · 即時報價 · 雲端同步 · 隱私模式</text>
+
+  <!-- CTA -->
+  <g transform="translate(80,510)">
+    <rect width="320" height="68" rx="34" fill="url(#emerald)"/>
+    <text x="160" y="44" font-size="22" font-weight="700" fill="white" text-anchor="middle" font-family="system-ui">免費開始 →</text>
+  </g>
+
+  <!-- Right: net worth card mockup -->
+  <g transform="translate(750,150)">
+    <rect width="370" height="360" rx="20" fill="rgba(16,185,129,0.08)" stroke="rgba(16,185,129,0.3)" stroke-width="1"/>
+    <text x="30" y="50" font-size="14" fill="#10B981" font-weight="700" font-family="system-ui" letter-spacing="1">NET WORTH</text>
+    <text x="30" y="110" font-size="48" font-weight="900" fill="white" font-family="system-ui">NT$ 2,847,520</text>
+    <text x="30" y="140" font-size="16" fill="#10B981" font-family="system-ui">↑ +3.2% 今日</text>
+
+    <!-- Donut chart mock -->
+    <g transform="translate(185,260)">
+      <circle r="70" fill="none" stroke="#10B981" stroke-width="20" stroke-dasharray="180 440" transform="rotate(-90)"/>
+      <circle r="70" fill="none" stroke="#6366F1" stroke-width="20" stroke-dasharray="120 440" stroke-dashoffset="-180" transform="rotate(-90)"/>
+      <circle r="70" fill="none" stroke="#F59E0B" stroke-width="20" stroke-dasharray="100 440" stroke-dashoffset="-300" transform="rotate(-90)"/>
+      <text text-anchor="middle" dy="6" font-size="14" fill="#b8b8c0" font-family="system-ui">3 類資產</text>
+    </g>
+
+    <!-- Legend -->
+    <g transform="translate(30,330)">
+      <rect width="10" height="10" rx="2" fill="#10B981"/>
+      <text x="20" y="9" font-size="13" fill="#b8b8c0" font-family="system-ui">股票 45%</text>
+    </g>
+    <g transform="translate(140,330)">
+      <rect width="10" height="10" rx="2" fill="#6366F1"/>
+      <text x="20" y="9" font-size="13" fill="#b8b8c0" font-family="system-ui">銀行 30%</text>
+    </g>
+    <g transform="translate(250,330)">
+      <rect width="10" height="10" rx="2" fill="#F59E0B"/>
+      <text x="20" y="9" font-size="13" fill="#b8b8c0" font-family="system-ui">加密 25%</text>
+    </g>
+  </g>
+</svg>
