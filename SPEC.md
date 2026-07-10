@@ -144,6 +144,14 @@
 - **And** 「註冊」按鈕 disabled
 - **And** 不送 API 請求
 
+**密碼政策（v2.2.1 補上 — 從 AI Agent 實測發現）**：
+- 至少 8 字元
+- 必須含英文字母 + 數字（例：`Password123`）
+- 不限制特殊字元
+- bcrypt cost 12 雜湊儲存
+- **Why this policy**：純長度不夠（`12345678` 太弱），需英數混合
+- 業界參考：NIST SP 800-63B（最少 8 字元 + 弱密碼檢查）
+
 ##### AC-003：Email 重複
 - **Given** email="existing@example.com" 已註冊
 - **When** 嘗試用同 email 註冊
@@ -267,10 +275,16 @@
 | 前端 | Next.js 16 + TypeScript | SSR 強、SEO 友善、AI Agent 易讀 |
 | 後端 | Next.js API Routes + FastAPI | 任務 queue 需 async（月底快照） |
 | 資料庫 | Prisma + PostgreSQL | 交易一致性（訂閱狀態）+ JSON 欄位（持倉快照） |
-| Auth | Auth.js v5 + Credentials + bcrypt | 不需 OAuth secret 即可運作 |
+| **Auth** | **NextAuth v4（v4.24+）**或 **Auth.js v5（next-auth@5 beta）** — 兩者皆可，**v1 建議 v4**（v5 仍 beta 不建議 production） | 不需 OAuth secret 即可運作；v2 加 OAuth 只需加 provider config |
 | 報價 API | TWSE + Yahoo Finance + CoinGecko | 公開免費、台美加密都覆蓋 |
 | PWA | service worker + manifest | 行動體驗、離線可用 |
 | 部署 | Vercel + Railway | Hobby 計畫免費、scale up 容易 |
+
+**Auth.js 版本備註**（v2.2.1 補上 — 從 AI Agent 實測發現歧義）：
+- **v4（stable）**：4.24+ 為 production-ready
+- **v5（beta）**：next-auth@5.x 雖功能更強但仍是 beta，不建議 v1 production
+- **v1 推薦用 v4**，v2.0 升級時再考慮 v5 stable
+- 若團隊堅持 v5，需在 Sprint 拆解加「v5 beta 風險評估」1 天
 
 ### 4.2 系統架構圖 (Mermaid)
 
@@ -352,19 +366,40 @@ model Snapshot {
 }
 ```
 
-### 4.4 API 規格
+### 4.4 API 規格 (REST endpoints)
 
 | Method | Path | 用途 | Auth |
 |---|---|---|---|
 | POST | /api/auth/register | 註冊 | No |
 | POST | /api/auth/login | 登入 | No |
 | POST | /api/auth/logout | 登出 | Yes |
+| GET | /api/auth/session | 取得目前 session | Yes |
 | GET | /api/dashboard | 取得總資產 + 配置 | Yes |
 | GET | /api/holdings | 取得持股列表 | Yes |
 | POST | /api/holdings | 新增持股 | Yes |
 | DELETE | /api/holdings/:id | 刪除持股 | Yes |
 | GET | /api/snapshots | 取得歷史快照 | Yes |
 | GET | /api/prices/:symbol | 取得即時報價 | Yes |
+
+**Response 格式統一規範**（v2.2.1 補上 — 從 AI Agent 實測發現）：
+- **success response**：`{ user_id, email, plan: "FREE", created_at }`
+  - **`plan` 用 Prisma enum 大寫**：`FREE` / `PRO` / `BUSINESS` / `ENTERPRISE`
+  - **為什麼大寫**：避免 API response 跟 DB enum 不一致（v1 之前用小寫會出 bug）
+- **error response**：`{ error: { code: "EMAIL_TAKEN", message: "..." } }`
+  - **error code 統一字典**（在 §10.4 定義）
+- **HTTP status code**：
+  - 201 成功建立
+  - 400 請求格式錯誤
+  - 401 未登入
+  - 403 權限不足
+  - 404 找不到
+  - 409 衝突（如 email 重複）
+  - 500 伺服器錯誤
+
+**Why this standardization**：
+- 前端不用 case-by-case 處理 plan 字串
+- 避免「free vs FREE vs Free」混亂
+- error code 統一讓前端可以 i18n 處理
 
 ---
 
@@ -617,15 +652,48 @@ quadrantChart
 | AC | Acceptance Criteria（驗收標準） |
 | MRR | Monthly Recurring Revenue（月度經常性收入） |
 | LTV | Life-Time Value（使用者終身價值） |
+| MUST/SHOULD/MAY | RFC 2119 需求語言（MUST=必要/SHOULD=應該/MAY=可選） |
+| P0/P1/P2 | 需求優先級（P0=必做/P1=加值/P2=可選） |
+| Q&A | Quadrant Chart 競品定位四象限圖 |
 
 ### 10.3 參考資料
 
+- [GitHub spec-kit](https://github.com/github/spec-kit) (119K ⭐) — User Story 格式範本
+- [MetaGPT](https://github.com/FoundationAgents/MetaGPT) (69K ⭐) — PRD 多 Agent 框架
+- [NIST SP 800-63B](https://pages.nist.gov/800-63-3/sp800-63b.html) — 數位身份驗證標準（含密碼政策）
+- [RFC 2119](https://datatracker.ietf.org/doc/html/rfc2119) — MUST/SHOULD/MAY 標準
 - [TWSE OpenAPI](https://openapi.twse.com.tw/)
 - [Yahoo Finance API](https://query1.finance.yahoo.com/v7/finance/quote)
 - [CoinGecko API](https://www.coingecko.com/api/documentation)
 - [Auth.js v5 文件](https://authjs.dev/getting-started)
-- [GitHub MetaGPT](https://github.com/FoundationAgents/MetaGPT) — PRD 多 Agent 框架
 
+### 10.4 ⭐ Error Code 統一字典（v2.2.1 新增 — 從 AI Agent 實測發現）
+
+**為什麼需要**：前端可以根據 error code 做對應處理（i18n、retry、redirect），不用 parse message。
+
+| Error Code | HTTP | 訊息（中/英） | 何時觸發 |
+|---|---|---|---|
+| `WEAK_PASSWORD` | 400 | 密碼至少 8 字元 + 含英數 / Password must be 8+ chars with letters & numbers | 註冊密碼不符政策 |
+| `INVALID_EMAIL` | 400 | Email 格式錯誤 / Invalid email format | email 格式不對 |
+| `TERMS_NOT_ACCEPTED` | 400 | 請勾選同意條款 / Must accept terms | 沒勾條款 checkbox |
+| `EMAIL_TAKEN` | 409 | 此 email 已被使用 / Email already registered | 重複 email |
+| `INVALID_CREDENTIALS` | 401 | Email 或密碼錯誤 / Invalid email or password | 登入失敗（防 enumeration）|
+| `SESSION_EXPIRED` | 401 | Session 已過期，請重新登入 / Session expired, please login again | 401 一般 |
+| `RATE_LIMIT_EXCEEDED` | 429 | 請求過於頻繁，請稍後再試 / Too many requests, please try later | 超過 rate limit |
+| `INVALID_SYMBOL` | 400 | 找不到此代號 / Symbol not found | 報價 API 找不到 |
+| `NEGATIVE_QUANTITY` | 400 | 股數必須為正整數 / Quantity must be positive | 負數股數 |
+| `DUPLICATE_SYMBOL` | 409 | 此代號已存在 / Symbol already exists | 重複代號 |
+| `INTERNAL_ERROR` | 500 | 系統錯誤，請稍後再試 / Internal error, please try later | 500 一般 |
+
+**Why this standardization**：
+- 前端可以針對 code 做不同 UX（retry / redirect / toast）
+- 國際化時不用 parse 訊息字串
+- 測試更簡單（assert error.code === 'EMAIL_TAKEN'）
+
+**為什麼不洩漏使用者存在**（重要資安）：
+- 登入失敗時，永遠回 `INVALID_CREDENTIALS`（不分「email 不存在」或「密碼錯」）
+- 註冊時 email 重複才回 `EMAIL_TAKEN`（必要 UX）
+- 密碼重設時，永遠回「如果 email 存在會寄信」（不洩漏 email 是否註冊）
 ---
 
 ## v1 → v2 升級記錄
