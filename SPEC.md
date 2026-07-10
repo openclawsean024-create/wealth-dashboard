@@ -525,6 +525,7 @@ model Snapshot {
 | Money Pro (商用財富管理) | 多幣別、稅務計算 | 月費 500+ NT$ | 免費版 + 純台灣市場 |
 | Excel 自製 | 完全客製 | 手動耗時、易錯 | 自動報價 + 統一 dashboard |
 | 試算表公開範本 | 免費 | 無法即時 | 純前端 SPA + 零月費 |
+| 銀行 App（個別） | 即時 | 跨行看不到 | 跨券商統一 dashboard |
 
 ### 10.2 術語表
 
@@ -577,6 +578,256 @@ model Snapshot {
 
 ---
 
-*本規格書版本：v2.0 — 2026-07-11*
-*下次審查：v2.1（Phase 4 變現完成後）*
+## 8. Sprint 拆解（v2.1 新增）
+
+### 8.1 里程碑總覽
+
+| Phase | 時間 | 範圍 | DoD |
+|---|---|---|---|
+| Phase 1: MVP 後端 | Week 1-2 | 註冊登入 + DB schema + 報價 API | 註冊→登入→新增持股 |
+| Phase 2: MVP 前端 | Week 3-4 | 統一 dashboard + 配置圓餅圖 | 30 秒看到總資產 |
+| Phase 3: 月底快照 | Week 5 | Cron job + 歷史快照 | 看到 3 個月趨勢 |
+| Phase 4: 變現 | Week 6-7 | Stripe + /pricing | 付費升級 Pro |
+| Phase 5: 法律 + 行銷 | Week 8 | /privacy /terms /contact /faq | 9/10 商業化驗收 |
+
+### 8.2 Sprint 拆解（核心改進 — 從 PRD 到「每天做什麼」）
+
+#### Week 1 Sprint: MVP 後端骨架
+
+| 天 | 時數 | 任務 | 對應 AC | DoD |
+|---|---|---|---|---|
+| Day 1（週一） | 8h | 建立 Next.js 16 專案 + Auth.js v5 + Prisma + 環境變數 | — | `npm run dev` 啟動 200 OK |
+| Day 2（週二） | 8h | 設計 Prisma schema + migration | — | `prisma studio` 看見 4 個 table |
+| Day 3（週三） | 8h | 實作 `/api/auth/register` + `/api/auth/login` + unit test | AC-001, AC-002, AC-003 | 3 條 AC 測試通過 |
+| Day 4（週四） | 8h | 實作 `/api/holdings` CRUD + 報價 API + unit test | AC-004, AC-005, AC-006 | 3 條 AC 測試通過 |
+| Day 5（週五） | 8h | E2E 測試：註冊→登入→新增持股→報價抓取 | — | E2E 通過 + 截圖 |
+
+#### Week 2 Sprint: MVP 後端完成
+
+| 天 | 時數 | 任務 | 對應 AC | DoD |
+|---|---|---|---|---|
+| Day 1 | 8h | `/api/dashboard` 彙總 API + 快取 60s | AC-007, AC-008 | 2 條 AC 測試通過 |
+| Day 2 | 8h | 月底快照 cron job (FastAPI + APScheduler) | AC-009 | 自動建立 1 個月快照 |
+| Day 3 | 8h | `/api/snapshots` 歷史查詢 | AC-010 | AC-010 測試通過 |
+| Day 4 | 8h | 整合測試 + 修 bug | — | E2E 全綠 |
+| Day 5 | 8h | Push GitHub + 部署 Vercel staging | DoD 全部 | Staging URL 200 OK |
+
+#### Week 3 Sprint: MVP 前端
+
+| 天 | 時數 | 任務 | DoD |
+|---|---|---|---|
+| Day 1 | 8h | Dashboard UI（總資產 + 配置圓餅圖 + 月變化） | AC-007 視覺對應 |
+| Day 2 | 8h | Holdings CRUD UI | AC-004 UI |
+| Day 3 | 8h | 報價即時更新（60s polling） | AC-008 |
+| Day 4 | 8h | Onboarding 引導 | 新使用者 5 分鐘上手 |
+| Day 5 | 8h | Mobile responsive + Lighthouse | Lighthouse > 90 |
+
+#### Week 4 Sprint: 變現 + 法律
+
+| 天 | 時數 | 任務 | DoD |
+|---|---|---|---|
+| Day 1 | 8h | Stripe 整合 | 付費測試卡通過 |
+| Day 2 | 8h | /pricing + plan badge | 4 個 tier 顯示 |
+| Day 3 | 8h | /privacy + /terms + /contact + /faq | 9/10 商業化驗收 |
+| Day 4 | 8h | SEO meta + sitemap | Lighthouse SEO > 95 |
+| Day 5 | 8h | E2E 真實環境驗證 + 修 bug | 全綠 + 截圖 |
+
+---
+
+## 9. 定價心理學（v2.1 新增）
+
+### 9.1 變現方案（含心理學應用）
+
+| 方案 | 價格 | 應用心理學技巧 | 功能 |
+|---|---|---|---|
+| 免費版 | NT$0 | 入口 | 3 帳戶 + 6 資產類型 |
+| 個人版 | ~~NT$599~~ **NT$299** | 價格錨定（原價劃掉） + 心理閾值（NT$999 變 NT$299） | 10 帳戶 + 價格警示 |
+| 投資達人版 | ~~NT$1,499~~ **NT$999** | 心理閾值（NT$999 看起來比 NT$1,000 划算） | 個人版 + 多幣別 |
+| 企業版 | **NT$4,999** | 3 選 2 心理（高階選項讓中間方案看起來划算） | 達人版 + 團隊 |
+
+### 9.2 LTV / CAC 計算
+
+```
+假設：
+- ARPU NT$299/月（個人版佔 80%）
+- 平均留存 8 個月（業界標準 6-12 個月）
+- 月行銷 NT$5,000、獲 20 新客
+
+LTV = 299 × 8 = NT$2,392
+CAC = 5,000 / 20 = NT$250
+LTV/CAC = 9.6（業界 > 3 = 健康）
+```
+
+---
+
+## 11. 市場驗證計畫（v2.1 新增）
+
+### 11.1 驗證前 3 個關鍵問題
+
+1. **目標客群會用嗎？** — 5 個訪談對象說「願意每月付 NT$299」
+2. **他們現在怎麼解決？** — 4 個券商 App 切換，但大多數人用 Excel 忍耐
+3. **為什麼我們的方案比現有好？** — 30 秒看完整總資產 + 配置 + 月變化
+
+### 11.2 訪談 SOP
+
+```
+Q1: 你目前在資產管理最頭痛的問題？
+Q2: 你現在用什麼工具？每月花多少時間？
+Q3: 如果有個工具 30 秒看完總資產，願意付多少？
+Q4: 你會推薦朋友用嗎？
+Q5: 你聽過 Personal Capital 嗎？用過嗎？
+```
+
+**成功標準**：5 個訪談中 4+ 個說「願意付 NT$299」
+
+### 11.3 Landing Page 測試
+
+- **時程**：PRD 寫完後 1 天做 LP
+- **預算**：NT$500 Facebook 廣告
+- **成功標準**：5% 註冊轉換率（50 點擊 → 10 註冊）
+
+### 11.4 留存指標目標
+
+| 指標 | 目標 | 業界標準 | 監控頻率 |
+|---|---|---|---|
+| Day 1 留存 | > 40% | 健康 > 25% | 每日 |
+| Day 7 留存 | > 20% | 健康 > 15% | 每週 |
+| Day 30 留存 | > 10% | 健康 > 8% | 每月 |
+| 轉付費率 | > 5% | 健康 > 2% | 每月 |
+| 付費後 30 天留存 | > 80% | 健康 > 70% | 每月 |
+| 月活躍使用者 (MAU) | > 500 (3 個月) | — | 每月 |
+| 報價 API 呼叫次數 | > 100K/月 (3 個月) | — | 每日 |
+| NPS (淨推薦值) | > 30 | 健康 > 20 | 每月 |
+
+**監控工具**：
+- Mixpanel/Amplitude（事件追蹤）
+- PostHog（開源 + self-host）
+- Plausible（簡單網頁分析）
+- Sentry（前端錯誤監控）
+- Grafana + Prometheus（後端指標）
+
+### 11.5 從 PRD 到上線 SOP
+
+```
+Step 1: 寫 PRD v2.0（本 skill）
+Step 2: 訪談 5 個目標客群（1-2 週）
+Step 3: 做 Landing Page（1 天）
+Step 4: 投放 NT$500 廣告（3-7 天）
+Step 5: 5+ 個 email 註冊 → 開始寫程式
+Step 6: 嚴格按 Sprint 拆解（8 週到 v2.0）
+Step 7: 上線追蹤 Day 1/7/30 留存
+Step 8: 3 個月 KPI 達標 → v2.1 升級 PRD
+```
+
+### 11.6 驗證失敗時的 Pivot SOP
+
+如果 Step 4 廣告投放後 < 5 個 email 註冊，**不要硬寫程式**：
+
+```
+1. 回頭檢視 PRD 1.1 問題陳述
+   - 痛點夠痛嗎？（每週花多少時間？）
+   - 替代方案夠差嗎？
+
+2. 換 5 個新受訪者訪談
+   - 換族群（年齡/職業/地區）
+   - 換痛點切入角度
+
+3. 重新做 Landing Page
+   - 換標題（10 種 A/B test）
+   - 換視覺（截圖 vs 影片）
+   - 換 CTA 文案（「免費試用」vs「搶先體驗」）
+
+4. 如果第二次還是 < 5 個註冊
+   - 認真考慮 pivot（換痛點/換客群）
+   - 不要繼續投入 — 沉沒成本謬誤
+```
+
+**為什麼**：業界研究 — 90% 的 SaaS 失敗在「PMF 沒驗證就寫程式」。NT$500 驗證失敗 = 救了 NT$500,000 的開發時間。
+
+---
+
+## 12. 失敗模式 SOP（v2.1 新增）
+
+### 12.1 10 種常見失敗模式
+
+| # | 失敗模式 | 機率 | 預防 | Fallback |
+|---|---|---|---|---|
+| 1 | PMF 失敗 | 50% | Landing Page 測試 | 3 月 KPI 沒達標 → pivot |
+| 2 | 範疇蔓延 | 30% | 嚴守 Non-Goals | 每個新需求先查 Non-Goals |
+| 3 | 技術債 | 40% | 每條 AC 對應 unit test | Refactor Friday |
+| 4 | 營收不足 | 35% | 3 月 KPI 沒達標就停損 | 轉 Freemium + 廣告 |
+| 5 | 競品追擊 | 25% | 鎖定利基市場 | 轉垂直深度 |
+| 6 | 使用者不付費 | 30% | 定價心理學 + 付費牆 | 訪談找付費意願最高的客群 |
+| 7 | 法律風險 | 15% | /privacy /terms + 法規諮詢 | 律師 1h 諮詢 NT$3-5k |
+| 8 | Scaling 失敗 | 20% | 架構支援 10x 流量 | 雲端 auto-scaling |
+| 9 | 團隊糾紛 | 10% | 明文合約 + 股權協議 | 找律師 NT$10-30k |
+| 10 | 燒光資金 | 20% | 3 月 Runway 緩衝 | 轉 Bootstrapping |
+
+### 12.2 Post-mortem SOP
+
+每個 Phase 完成後強制寫：
+
+```markdown
+## Phase X Post-mortem
+
+### 完成了什麼？
+- [具體清單]
+
+### 沒達成的？
+- [具體清單 + 為什麼]
+
+### 學到什麼？
+- [3-5 條]
+
+### 下個 Phase 要改什麼？
+- [具體行動]
+```
+
+---
+
+## 13. MetaGPT 對齊格式（v2.1 新增）
+
+| MetaGPT 產出檔案 | 對應 PRD v2 區塊 |
+|---|---|
+| `requirement.txt` | 3. 功能性需求（含 AC） |
+| `competitive_analysis.md` | 10.1 競品分析 |
+| `data_structure_design.py` | 4.3 資料模型（Prisma schema） |
+| `api_design.md` | 4.4 API 規格 |
+| `sequence_flow.md` | 2.1 + 2.2 User Stories |
+
+**餵給 AI Agent（推薦 Cursor/Claude Code）**：
+```
+Cursor > Composer > Add SPEC.md > 寫 prompt:
+「讀 SPEC.md，從 Sprint Week 1 Day 3 開始實作 AC-001」
+```
+
+---
+
+## v1 → v2 → v2.1 升級記錄
+
+**v1.0**（2026-07-11，Sophia 手動寫）：
+- 6 區塊（問題/方案/功能/技術/DoD/風險/變現）
+- 缺 AC、ADR、降級機制、Prisma schema、API 規格、里程碑
+
+**v2.0**（2026-07-11，用 write-prd-v2 skill 升級）：
+- ✅ 10 區塊完整
+- ✅ AC-001 ~ AC-010（Given/When/Then）
+- ✅ ADR-001 ~ ADR-004
+- ✅ 降級機制（6 種服務）
+- ✅ Prisma schema + API 規格
+- ✅ 7 個 Phase 里程碑
+
+**v2.1**（2026-07-11，深化 Skill 後再升級）：
+- ✅ 8.2 Sprint 拆解（從里程碑到「每天做什麼」）
+- ✅ 9.2 定價心理學（業界 6 種技巧）
+- ✅ 11. 市場驗證計畫（沒驗證就別寫程式）
+- ✅ 12. 失敗模式 SOP（10 種失敗 + Post-mortem）
+- ✅ 13. MetaGPT 對齊格式
+
+**字數演進**：v1 簡略版 ~ 2,000 → v2.0 ~ 14,000 → v2.1 ~ 18,000 字
+
+---
+
+*本規格書版本：v2.1 — 2026-07-11*
 *Skill：`write-prd-v2` v1.0.0 套用範例*
+*驗證分數：見 `scripts/validate_prd.py` 輸出*
