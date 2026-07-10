@@ -1,132 +1,121 @@
-# Wealth Dashboard MVP — 規格書
+# 整合資產管理平台（Wealth Dashboard） — 規格計劃書 v1.0
 
-## 1. 專案概述
-
-**名稱：** Wealth Dashboard（整合資產管理平台）  
-**版本：** MVP v1.0 → v2.0 商業化（2026-07-07 啟動）
-**目的：** 聚合銀行、股票、加密貨幣資產於單一儀表板，支援多幣種計價。
-**目標用戶：** 個人投資者，同時持有股票與加密貨幣資產。
+> 版本：v1.0｜更新日期：2026-07-11｜維護者：Sophia (CPO)
+> 對接技術：Alan (CTO)
 
 ---
 
-## 2. 功能規格（MVP v1.0）
+## 1. 問題陳述
 
-### ✅ 已實作
+### 1.1 目標使用者
 
-| # | 功能 | 說明 |
-|---|------|------|
-| 1 | 總淨資產顯示 | 銀行 + 股票 + 加密貨幣總計（USDC 預設） |
-| 2 | 甜甜圈圖 | Recharts 圓餅圖，顯示三類資產配置比例 |
-| 3 | 股票報價 | Yahoo Finance API（2330.TW、2317.TW、BTC-USD） |
-| 4 | 加密報價 | CoinGecko API（bitcoin、ethereum、solana） |
-| 5 | 幣別切換 | USDC / BTC / ETH / CNY 一鍵切換 |
-| 6 | 隱私模式 | Ctrl+H 或點擊按鈕隱藏所有金額 |
-| 7 | 漲跌顏色 | 漲時綠色（emerald），跌時紅色（rose） |
-| 8 | 進度條配置 | 組合概覽區塊，各類資產佔比視覺化 |
-| 9 | 帳戶連結面板 | 顯示 Bank/Brokerage/Crypto 連結狀態 |
-| 10 | 會員面板 | Gold Member 展示（登入狀態、方案） |
+| 族群 | 規模 | 痛點 |
+|---|---|---|
+| 台灣投資人（4-6 個資產帳戶） | ~300 萬 | 資產分散在 4-5 個券商 App，切換看總資產耗 30 分鐘 |
+| 小資族（薪轉 + 投資） | ~200 萬 | 同時有台股/美股/基金/加密，不知道真實資產配置 |
+| FIRE 運動者 | ~5 萬 | 嚴格追蹤淨資產、每月變化、退休進度 |
+| 投資理財 KOL | ~1,000 | 需要快速截圖自己的 dashboard 給粉絲看 |
 
-### ❌ 未實作（未來版本）
+### 1.2 為什麼不做替代方案
 
-- P&L 追蹤
-- 預算功能
-- 價格預測
-- 多平台交易所 API
-- 鏈上錢包整合
-- DeFi 協議整合
+- **各券商 App 切換**：30 分鐘才能看完總資產、無法看配置
+- **Excel 自製表**：手動更新、容易出錯、無即時報價
+- **商用財富管理工具（Personal Capital）**：歐美為主、不支援台股
+- **我們的解法**：6 種資產類型（台股/美股/基金/加密/定存/儲蓄險）+ 統一 dashboard + 30 秒看完總資產 + 歷史快照，純前端
 
 ---
 
-## 2.5 商業化路線圖（v2.0 — 6 Session 計劃）
+## 2. 解決方案
 
-> 2026-07-07 老闆選 A1「完整 6 session 商業化」。目標：推到 9/10（真實能收費）。
+### 2.1 核心價值主張
 
-**商業模式：**
-- **Free**：最多 6 筆資產 + 雲端同步 + JSON 匯出
-- **Pro NT$149/月**：無限資產 + 即時股價 + 多幣別換算 + PDF/Excel 匯出
-- **Business NT$399/月**：多帳號（≤5）+ 白標 + API + 2FA
+> 「30 秒看完你的總資產 + 配置 + 月變化 — 6 種資產類型統一管理。」
 
-### Session 1（已完成）✅
-- 盤點 + Notion 推進
-- Vercel 既部署確認活著
+### 2.2 使用者流程
 
-### Session 2（已完成）✅
-- Prisma 5.22 schema（User / Asset / Transaction / Subscription / Account / Session）
-- Auth.js v5 + bcrypt（Credentials provider）
-- `/register`、`/login` 設計師級頁面
-- `/api/assets` REST（GET/POST/PATCH/DELETE，userId 過濾）
-- Dashboard 加 auth guard + user email + logout button
-- `DashboardClient` 改用 server-rendered initialAssets + syncNow fetch API + handleAddAsset POST API
-- Landing page 設計師級（Hero / 3 features / Pricing preview）
-- 自動 seed 7 個 demo 資產給首次登入用戶
-- **自驗證**：register → auto-login → 7 資產顯示（DB 證據）
-- **部署**：`wealth-dashboard-iota.vercel.app` live verify
-- **Notion**：狀態「🔄 開發中」
-
-### Session 3（進行中）
-**完成標準**：
-1. ⏳ `/pricing` 頁面（3 方案 + 比較表）
-2. ⏳ `/faq` 頁面（accordion 12 條 FAQ 分 3 大類）
-3. ⏳ `/contact` 頁面（4 種聯絡管道）
-4. ⏳ `/terms`、`/privacy` 頁面（法律文件，設計師級排版）
-5. ⏳ Dashboard asset row 加 🗑️ 按鈕 + 確認 modal + DELETE API 整合
-6. ⏳ 確認 Tailwind v4 production utility class 編譯（不降版 v3）
-7. ⏳ Live E2E 驗證：register → create asset → delete asset
-8. ⏳ Vercel redeploy + Notion 推進
-
-### Session 4（待辦）
-- Pro plan Stripe checkout placeholder（沿用名片王架構）
-- `/checkout` 頁面 + plan limit 提示 UI
-- Plan upgrade 流程（free → pro）
-
-### Session 5（待辦）
-- 即時股價更新（每 60s polling）
-- 多幣別切換功能（TWD / USD / BTC / ETH）
-- 損益表 + 交易紀錄 UI
-
-### Session 6（待辦）
-- 最終 polish（截圖驗證、SEO meta、Open Graph）
-- Notion 推到「✅ 已完成部署」
-- Postgres 切換（Vercel 後台設 DATABASE_URL）
-- AUTH_SECRET 換 production value
-
-### 技術債（生產前必修）
-- ❌ SQLite dev.db 在 Vercel 不持久（cold start 重置）
-- ❌ AUTH_SECRET 是 placeholder
-- ❌ Stripe 金流是 placeholder
-- ❌ 沒 OAuth（Google / GitHub）
+1. 註冊帳號 + 新增資產帳戶（6 種類型）
+2. 輸入持股（台股代號/美股 ticker/基金代碼）
+3. 系統抓取即時報價（公開 API）
+4. 儀表板顯示：總資產 / 配置圓餅圖 / 月變化 / 個股漲跌
+5. 每月自動快照（月底資產狀態）
 
 ---
 
-## 3. 技術棧
+## 3. 功能清單
 
-- **Framework：** Next.js 16.2.1 (App Router)
-- **UI：** React 19 + Tailwind CSS v4
-- **圖表：** Recharts 3.8.1
-- **股票報價：** Yahoo Finance (yahoo-finance2)
-- **加密報價：** CoinGecko REST API
-- **部署：** Vercel
+### 3.1 MVP（必做）
+
+- [ ] 6 種資產類型（台股/美股/基金/加密/定存/儲蓄險）
+- [ ] 即時報價抓取（TWSE + Yahoo Finance + CoinGecko）
+- [ ] 統一 dashboard（總資產/配置/變化）
+- [ ] 歷史快照（每月資產狀態）
+- [ ] 配置建議（基於風險屬性）
+- [ ] 月報表匯出 PDF
+- [ ] 價格警示（自訂閾值通知）
+
+### 3.2 v2（加值）
+
+- [ ] 稅務計算（台灣股利/美國 30% 預扣稅）
+- [ ] 多幣別資產換算
+- [ ] 投資組合再平衡建議
+- [ ] API 自動串接券商（需券商授權）
+
+### 3.3 明確不做
+
+- 自動下單（不做交易）
+- 投資建議（明確聲明僅供參考）
+- 加密貨幣 wallet 整合（純價格追蹤）
+- 跨境稅務申報
 
 ---
 
-## 4. 匯率設定（固定匯率，MVP 用）
+## 4. 技術棧
 
-```typescript
-const FX = { USDC: 1, BTC: 67000, ETH: 3500, CNY: 7.25 };
-const TWD_PER_USD = 32.5;
-```
+| 層 | 選擇 | 理由 |
+|---|---|---|
+| 前端 | Next.js 16 + TypeScript | 已驗證 |
+| 後端 | Next.js API Routes | 已驗證 |
+| 資料庫 | Prisma + PostgreSQL | 已驗證 |
+| Auth | Auth.js v5 + Credentials | 已驗證 |
+| 報價 API | TWSE + Yahoo Finance + CoinGecko | 公開免費 |
+| PWA | service worker + manifest | 已驗證 |
+| 部署 | Vercel + Railway |
 
 ---
 
-## 5. 驗收標準
+## 5. 完成標準（Definition of Done）
 
-| # | 條件 | 狀態 |
-|---|------|------|
-| 1 | Dashboard 顯示總淨資產（USDC 預設） | ✅ |
-| 2 | 甜甜圈圖顯示銀行/股票/加密配置比例 | ✅ |
-| 3 | 股票報價從 Yahoo Finance 取得 | ✅ |
-| 4 | 加密貨幣報價從 CoinGecko 取得 | ✅ |
-| 5 | 可切換 USDC / BTC / ETH / CNY 計價 | ✅ |
-| 6 | Ctrl+H 隱藏/顯示所有金額 | ✅ |
-| 7 | 漲時綠色，跌時紅色標示 | ✅ |
-| 8 | 部署至 Vercel 可正常運作 | ✅ |
+- [ ] Vercel production URL（https://wealth-dashboard-iota.vercel.app/）200 OK
+- [ ] GitHub Repo 公開（https://github.com/openclawsean024-create/wealth-dashboard）
+- [ ] 6 種資產類型可新增帳戶
+- [ ] 即時報價抓取正確（測 10 種樣本）
+- [ ] 統一 dashboard 數字正確（手算對照）
+- [ ] 配置圓餅圖正確
+- [ ] 歷史快照可建立 + 對比
+- [ ] PWA 可離線開啟
+
+---
+
+## 6. 風險與決策
+
+| 風險 | 等級 | 緩解 |
+|---|---|---|
+| 報價 API 變動/失效 | 🟠 中 | 多源 fallback + 快取 |
+| 個資/財務資料外洩 | 🔴 高 | 加密儲存 + 用戶可控刪除 |
+| 投資建議法律責任 | 🔴 高 | 明確免責聲明 |
+| 即時報價延遲（API rate limit） | 🟡 低 | 60s in-memory cache |
+
+---
+
+## 7. 變現路徑
+
+| 方案 | 價格 | 功能 |
+|---|---|---|
+| 免費版 | NT$0 | 3 帳戶 + 6 資產類型 + 月快照 |
+| 個人版 | NT$299/月 | 10 帳戶 + 價格警示 + 稅務計算 |
+| 投資達人版 | NT$999/月 | 個人版 + 多幣別 + API 整合 |
+| 企業版 | NT$4,999/月 | 達人版 + 團隊協作 + 白標 |
+
+---
+
+*本規格書版本：v1.0 — 2026-07-11*
