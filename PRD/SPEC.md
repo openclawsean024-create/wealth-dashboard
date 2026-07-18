@@ -573,6 +573,118 @@ AAPL,Dividend,50,0.48,2024-02-15,24.00
 
 ---
 
+### 4.6 ⭐ v2 遷移路徑：Prisma Schema（cloud sync 升級時使用）
+
+**Why this section**：v3.0 MVP 刻意選擇 localStorage（ADR-001），但 v2.0 當 MAU > 1,000 或需要跨裝置同步時，會 migrate 到 PostgreSQL + Prisma。**先定義 schema**，避免 v2 開工時重新設計。
+
+```prisma
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String?  // optional（OAuth only 也可）
+  plan         Plan     @default(FREE)
+  createdAt    DateTime @default(now())
+
+  accounts     Account[]
+  snapshots    Snapshot[]
+  exports      ExportLog[]
+}
+
+enum Plan {
+  FREE
+  PRO
+  AGENCY
+}
+
+model Account {
+  id        String    @id @default(cuid())
+  userId    String
+  broker    String    // YUANTA / CATHAY / SCHWAB / IBKR / BINANCE / OTHER
+  name      String
+  currency  String    // 主要計價幣別
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  holdings  Holding[]
+  createdAt DateTime  @default(now())
+}
+
+model Holding {
+  id              String   @id @default(cuid())
+  accountId       String
+  symbol          String
+  quantity        Decimal
+  avgCost         Decimal
+  costBasis       Decimal  // 原幣
+  costBasisTWD    Decimal  // 購入當時 TWD
+  currency        String
+  lastPriceUpdate DateTime?
+
+  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+}
+
+model Snapshot {
+  id           String   @id @default(cuid())
+  userId       String
+  date         DateTime
+  totalValueTWD Decimal
+  twr          Float    // %
+  mwr          Float    // %
+  details      Json
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, date])
+}
+
+model ExportLog {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String   // tax / history / snapshot
+  year        Int?
+  generatedAt DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+```
+
+**Migration SOP（v1 → v2）**：
+1. 從使用者 localStorage 匯出 JSON
+2. 透過 OAuth 登入（首次使用 v2）
+3. 後端接收 JSON → 寫入 Prisma
+4. localStorage 標記「已 migrate」
+5. v2 Dashboard 從 Postgres 讀取
+
+### 4.7 ⭐ v2 遷移路徑：API Endpoints（cloud sync 升級時使用）
+
+**Why this section**：v3.0 MVP 是純前端 + 0 個自建 API endpoint（ADR-001 刻意排除）。v2.0 引入 cloud sync 後會需要以下 endpoints，先規格化：
+
+| Method | Path | Auth | 用途 | 對應 P0 |
+|---|---|---|---|---|
+| POST | /api/auth/register | No | Email/password 註冊 | P2-002 |
+| POST | /api/auth/oauth/google | No | Google OAuth 登入 | P2-002 |
+| GET | /api/holdings | Yes | 取得使用者所有 holdings | 對應 v3 P0-MUST-1~4 |
+| POST | /api/holdings | Yes | 新增 holding（含 fxRate） | 對應 v3 P0-MUST-1~4 |
+| PATCH | /api/holdings/:id | Yes | 更新 holding | 對應 v3 P0-MUST-1~4 |
+| DELETE | /api/holdings/:id | Yes | 刪除 holding | 對應 v3 P0-MUST-1~4 |
+| GET | /api/dashboard | Yes | 取得總資產 + 多幣別配置 | 對應 v3 P0-MUST-2 |
+| GET | /api/snapshots | Yes | 取得歷史快照列表 | 對應 v3 P0-MUST-5 |
+| POST | /api/snapshots | Yes | 手動建立月底快照 | 對應 v3 P0-MUST-5 |
+| GET | /api/tax/export?year=YYYY | Yes | 匯出年度稅務 CSV | 對應 v3 P0-MUST-6 |
+| GET | /api/fx/:currency | Yes | 取得央行當日匯率（server cache） | 對應 v3 P0-MUST-2 |
+| GET | /api/fx/history | Yes | 取得歷史匯率 | 對應 v3 P0-MUST-2 |
+
+**為什麼 v1 不需要這些 endpoints**：
+- v1 純前端 + localStorage = 0 個後端 endpoint
+- 央行匯率 API 直接從前端呼叫（避免後端 proxy 額外成本）
+- 所有運算都在瀏覽器執行（TWR/MWR/配息再投入）
+
+**為什麼 v2 需要**：
+- 跨裝置同步（多裝置登入看同一份資料）
+- 多人共用帳戶（家庭 CFO Mary 場景）
+- 資料備份（避免 localStorage 被清）
+
+---
+
 ## 5. 非功能性需求 (Non-Functional Requirements)
 
 ### 5.1 性能指標
@@ -676,7 +788,7 @@ AAPL,Dividend,50,0.48,2024-02-15,24.00
 
 ### 7.2 ⭐ ADR (Architecture Decision Records) — at least 3 ADRs
 
-#### **ADR-001：選擇 localStorage 而非 PostgreSQL（v3.0 重大決策）**
+### ADR-001：選擇 localStorage 而非 PostgreSQL（v3.0 重大決策）
 
 - **決策**：v1 純前端，所有資料存 localStorage
 - **狀態**：✅ 已決定（2026-07-19）
@@ -696,7 +808,7 @@ AAPL,Dividend,50,0.48,2024-02-15,24.00
 - **後悔成本**：v2 改 Postgres 約 1 週工作（匯出 JSON → 寫入 DB）
 - **再討論時機**：MAU > 500 或需要跨裝置同步時
 
-#### **ADR-002：選擇 CSV-only 而非券商 API 自動串接（v3.0 核心 sweet spot 決策）**
+### ADR-002：選擇 CSV-only 而非券商 API 自動串接（v3.0 核心 sweet spot 決策）
 
 - **決策**：使用者手動從券商 App 匯出 CSV，上傳到 Wealth Dashboard v3.0
 - **狀態**：✅ 已決定（2026-07-19）
@@ -716,7 +828,7 @@ AAPL,Dividend,50,0.48,2024-02-15,24.00
 - **後悔成本**：改 API 串接約 2-4 週工作
 - **再討論時機**：MAU > 5000 且有 30%+ 使用者反映 CSV 手動麻煩時
 
-#### **ADR-003：選擇聚焦「多幣別 + 含息含費 TWR/MWR」niche 而非泛用工具**
+### ADR-003：選擇聚焦「多幣別 + 含息含費 TWR/MWR」niche 而非泛用工具
 
 - **決策**：v3.0 放棄「泛用資產管理工具」定位，聚焦「**台灣 + 海外券商 + 多幣別成本基礎 + 含息含費真實報酬率**」這個無人滿足的 niche
 - **狀態**：✅ 已決定（2026-07-19）
@@ -736,7 +848,7 @@ AAPL,Dividend,50,0.48,2024-02-15,24.00
 - **後悔成本**：轉泛用工具約 2 週（加 API 串接 + UI 改版）
 - **再討論時機**：3 個月 KPI 沒達標且訪談顯示 niche 不存在時
 
-#### **ADR-004：選擇 Next.js 16 + Vercel 而非 Vite SPA**
+### ADR-004：選擇 Next.js 16 + Vercel 而非 Vite SPA
 
 - **決策**：使用 Next.js 16 + TypeScript + Vercel Static Export
 - **狀態**：✅ 已決定
@@ -990,7 +1102,7 @@ quadrantChart
 
 ---
 
-## 11. ⭐ 市場驗證計畫（v3.0 強化版）
+## 11. 市場驗證計畫（v3.0 強化版）
 
 ### 11.1 驗證前 3 個關鍵問題
 
@@ -1073,7 +1185,7 @@ Step 3: 第二次仍 < 5 個註冊
 
 ---
 
-## 12. ⭐ 失敗模式 SOP（v3.0 強化版）
+## 12. 失敗模式 SOP（v3.0 強化版）
 
 ### 12.1 12 種常見失敗模式
 
@@ -1129,7 +1241,7 @@ Day 11-14: 重新寫 §1.1 問題陳述 + §3.1 MVP
 
 ---
 
-## 13. ⭐ MetaGPT / spec-kit 對齊
+## 13. MetaGPT / spec-kit 對齊
 
 ### 13.1 MUST / SHOULD / MAY
 
@@ -1274,7 +1386,7 @@ v3.0：預期 7-8/10（聚焦 niche，差異化明確）
 
 ---
 
-## 15. ⭐ 深度市調報告（Sweet Spot 5 問體檢結果）
+## 15. 深度市調報告（Sweet Spot 5 問體檢結果）
 
 ### 15.1 Sweet Spot 5 問體檢結果（2026-07-19 subagent）
 
