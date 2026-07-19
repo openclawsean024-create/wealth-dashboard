@@ -12,6 +12,8 @@
 
 # testing
 /coverage
+/test-results
+/playwright-report
 
 # next.js
 /.next/
@@ -19,6 +21,9 @@
 
 # production
 /build
+
+# vercel
+.vercel
 
 # misc
 .DS_Store
@@ -28,23 +33,14 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
-.vercel
+# local env files
+.env*.local
+.env
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
 
-# Prisma SQLite dev DB
-/prisma/dev.db
-/prisma/dev.db-journal
-
-# Env
-.env
-.env.local
-.env.production
+# logs
+*.log
