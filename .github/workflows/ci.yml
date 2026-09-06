@@ -1,0 +1,93 @@
+# GitHub Actions Workflow — wealth-dashboard
+# 自動套用 gha-template，deploy target = vercel (Next.js 16 + Prisma → Vercel)
+# 共存：原有 .github/workflows/vercel.yml 仍可運作；本 ci.yml 為 4-job lint/test/build/deploy
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEPLOY_TARGET: vercel
+  AUTH_SECRET: ${{ secrets.AUTH_SECRET || 'ci-fleet-placeholder-not-used' }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --legacy-peer-deps || npm install
+      - run: npm run lint
+
+  test:
+    name: Unit Tests (v3 financial core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --legacy-peer-deps || npm install
+      - run: npm test -- --run
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --legacy-peer-deps || npm install
+      - run: npx prisma generate
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: .next/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  deploy:
+    name: Deploy to Vercel
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --legacy-peer-deps || npm install
+      - run: npx prisma generate
+      - run: npm run build
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+          working-directory: ./

@@ -6,7 +6,7 @@ const SYMBOLS = ['2330.TW', '2317.TW', 'BTC-USD'];
 
 export async function GET() {
   try {
-    const prices: Record<string, any> = {};
+    const prices: Record<string, unknown> = {};
 
     const results = await Promise.allSettled(
       SYMBOLS.map(async (symbol) => {

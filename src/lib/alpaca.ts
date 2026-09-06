@@ -30,7 +30,7 @@ export interface AlpacaPortfolio {
   syncedAt: string;
 }
 
-async function alpacaFetch(path: string, keys: AlpacaKeys): Promise<any> {
+async function alpacaFetch(path: string, keys: AlpacaKeys): Promise<Record<string, unknown>> {
   const url = `https://paper-api.alpaca.markets/v2${path}`;
   const res = await fetch(url, {
     headers: {
@@ -49,19 +49,21 @@ async function alpacaFetch(path: string, keys: AlpacaKeys): Promise<any> {
 
 export async function fetchAlpacaAccount(keys: AlpacaKeys): Promise<AlpacaAccount> {
   const data = await alpacaFetch('/account', keys);
+  const d = data as Record<string, string>;
   return {
-    accountNumber: data.account_number || '',
-    equity: parseFloat(data.equity || '0'),
-    cash: parseFloat(data.cash || '0'),
-    buyingPower: parseFloat(data.buying_power || '0'),
-    portfolioValue: parseFloat(data.portfolio_value || '0'),
-    status: data.status || 'UNKNOWN',
+    accountNumber: d.account_number || '',
+    equity: parseFloat(d.equity || '0'),
+    cash: parseFloat(d.cash || '0'),
+    buyingPower: parseFloat(d.buying_power || '0'),
+    portfolioValue: parseFloat(d.portfolio_value || '0'),
+    status: d.status || 'UNKNOWN',
   };
 }
 
 export async function fetchAlpacaPositions(keys: AlpacaKeys): Promise<AlpacaPosition[]> {
   const data = await alpacaFetch('/positions', keys);
-  return (data || []).map((p: any) => ({
+  const list = (data as unknown as Record<string, string>[]) || [];
+  return list.map((p) => ({
     symbol: p.symbol,
     qty: parseFloat(p.qty || '0'),
     marketValue: parseFloat(p.market_value || '0'),

@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   const display = (searchParams.get("display") ?? "TWD") as DisplayCurrency;
   const fxRate = FX_TO_USD[display] ?? FX_TO_USD.TWD;
 
-  const enriched: Record<string, any> = {};
+  const enriched: Record<string, unknown> = {};
   for (const [sym, q] of Object.entries(quotes)) {
     if ("error" in q) {
       enriched[sym] = { error: q.error };

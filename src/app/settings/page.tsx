@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import Link from 'next/link';
 import { apiKeys } from '@/lib/api-keys';
 import { fetchBinanceSpotBalances, type BinanceSpotBalances } from '@/lib/binance';
 import { fetchAlpacaPortfolio, type AlpacaPortfolio } from '@/lib/alpaca';
@@ -21,42 +22,31 @@ interface SyncResult {
   error?: string;
 }
 
+function getErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    return String((err as { message?: unknown }).message ?? fallback);
+  }
+  return fallback;
+}
+
 export default function SettingsPage() {
-  // Binance
-  const [binanceApiKey, setBinanceApiKey] = useState('');
-  const [binanceSecret, setBinanceSecret] = useState('');
+  // Binance — 從 localStorage 一次性初始化（避免 setState in effect）
+  const [binanceApiKey, setBinanceApiKey] = useState(() => apiKeys.binance.get()?.apiKey ?? '');
+  const [binanceSecret, setBinanceSecret] = useState(() => apiKeys.binance.get()?.secretKey ?? '');
 
   // Alpaca
-  const [alpacaApiKey, setAlpacaApiKey] = useState('');
-  const [alpacaSecret, setAlpacaSecret] = useState('');
+  const [alpacaApiKey, setAlpacaApiKey] = useState(() => apiKeys.alpaca.get()?.apiKey ?? '');
+  const [alpacaSecret, setAlpacaSecret] = useState(() => apiKeys.alpaca.get()?.secretKey ?? '');
 
   // Wise
-  const [wiseToken, setWiseToken] = useState('');
-  const [wiseProfileId, setWiseProfileId] = useState('');
+  const [wiseToken, setWiseToken] = useState(() => apiKeys.wise.get()?.apiToken ?? '');
+  const [wiseProfileId, setWiseProfileId] = useState(() => apiKeys.wise.get()?.profileId ?? '');
 
   // Sync state
   const [syncState, setSyncState] = useState<SyncState>({ binance: 'idle', alpaca: 'idle', wise: 'idle' });
   const [syncResults, setSyncResults] = useState<SyncResult>({});
   const [syncError, setSyncError] = useState<string | null>(null);
-
-  // Load saved keys on mount
-  useEffect(() => {
-    const bKeys = apiKeys.binance.get();
-    if (bKeys) {
-      setBinanceApiKey(bKeys.apiKey);
-      setBinanceSecret(bKeys.secretKey);
-    }
-    const aKeys = apiKeys.alpaca.get();
-    if (aKeys) {
-      setAlpacaApiKey(aKeys.apiKey);
-      setAlpacaSecret(aKeys.secretKey);
-    }
-    const wKeys = apiKeys.wise.get();
-    if (wKeys) {
-      setWiseToken(wKeys.apiToken);
-      setWiseProfileId(wKeys.profileId);
-    }
-  }, []);
 
   const handleSaveBinance = () => {
     apiKeys.binance.set({ apiKey: binanceApiKey.trim(), secretKey: binanceSecret.trim() });
@@ -82,8 +72,8 @@ export default function SettingsPage() {
       const result = await fetchBinanceSpotBalances(keys);
       setSyncResults(prev => ({ ...prev, binance: result }));
       setSyncState(s => ({ ...s, binance: 'success' }));
-    } catch (err: any) {
-      setSyncError(err.message || '同步失敗');
+    } catch (err: unknown) {
+      setSyncError(getErrorMessage(err, '同步失敗'));
       setSyncState(s => ({ ...s, binance: 'error' }));
     }
   };
@@ -100,8 +90,8 @@ export default function SettingsPage() {
       const result = await fetchAlpacaPortfolio(keys);
       setSyncResults(prev => ({ ...prev, alpaca: result }));
       setSyncState(s => ({ ...s, alpaca: 'success' }));
-    } catch (err: any) {
-      setSyncError(err.message || '同步失敗');
+    } catch (err: unknown) {
+      setSyncError(getErrorMessage(err, '同步失敗'));
       setSyncState(s => ({ ...s, alpaca: 'error' }));
     }
   };
@@ -118,8 +108,8 @@ export default function SettingsPage() {
       const result = await fetchWiseAccount(keys);
       setSyncResults(prev => ({ ...prev, wise: result }));
       setSyncState(s => ({ ...s, wise: 'success' }));
-    } catch (err: any) {
-      setSyncError(err.message || '同步失敗');
+    } catch (err: unknown) {
+      setSyncError(getErrorMessage(err, '同步失敗'));
       setSyncState(s => ({ ...s, wise: 'error' }));
     }
   };
@@ -137,8 +127,8 @@ export default function SettingsPage() {
       <header className="border-b border-[#30363D] bg-[#0D1117]/80 backdrop-blur sticky top-0 z-40">
         <div className="max-w-3xl mx-auto px-4 py-5 sm:px-6">
           <div className="flex items-center gap-3">
-            <a href="/" className="text-[#8B949E] hover:text-white transition-colors text-sm">← 返回</a>
-            <a href="/settings" className="text-[#8B949E] hover:text-white transition-colors text-sm">⚙️ API 設定</a>
+            <Link href="/" className="text-[#8B949E] hover:text-white transition-colors text-sm">← 返回</Link>
+            <Link href="/settings" className="text-[#8B949E] hover:text-white transition-colors text-sm">⚙️ API 設定</Link>
             <h1 className="text-2xl font-bold text-white">⚙️ API 設定</h1>
           </div>
           <p className="mt-2 text-sm text-[#8B949E]">

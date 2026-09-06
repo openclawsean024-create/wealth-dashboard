@@ -58,8 +58,9 @@ export async function registerAction(
     });
     // 不會到這裡（被 redirect 中斷）
     return { ok: true };
-  } catch (e: any) {
-    if (e?.message === "NEXT_REDIRECT" || e?.digest?.includes("NEXT_REDIRECT")) {
+  } catch (e: unknown) {
+    const err = e as { message?: string; digest?: string };
+    if (err?.message === "NEXT_REDIRECT" || err?.digest?.includes("NEXT_REDIRECT")) {
       throw e;
     }
     if (e instanceof AuthError) {
@@ -69,7 +70,7 @@ export async function registerAction(
       return { error: "註冊成功但自動登入失敗，請手動登入" };
     }
     console.error("registerAction error:", e);
-    return { error: e?.message ?? "註冊失敗" };
+    return { error: err?.message ?? "註冊失敗" };
   }
 }
 
@@ -91,7 +92,7 @@ export async function loginAction(
       redirectTo: "/dashboard",
     });
     return { ok: true };
-  } catch (e: any) {
+  } catch (e: unknown) {
     if (e instanceof AuthError) {
       if (e.type === "CredentialsSignin") {
         return { error: "Email 或密碼錯誤" };
@@ -99,10 +100,11 @@ export async function loginAction(
       return { error: "登入失敗，請稍後再試" };
     }
     // NEXT_REDIRECT 是正常 redirect，不是錯誤
-    if (e?.message === "NEXT_REDIRECT" || e?.digest?.includes("NEXT_REDIRECT")) {
+    const err = e as { message?: string; digest?: string };
+    if (err?.message === "NEXT_REDIRECT" || err?.digest?.includes("NEXT_REDIRECT")) {
       throw e;
     }
     console.error("loginAction error:", e);
-    return { error: e?.message ?? "登入失敗" };
+    return { error: err?.message ?? "登入失敗" };
   }
 }

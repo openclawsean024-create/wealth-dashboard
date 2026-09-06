@@ -23,7 +23,7 @@ export interface WiseAccount {
   syncedAt: string;
 }
 
-async function wiseFetch(path: string, keys: WiseKeys): Promise<any> {
+async function wiseFetch(path: string, keys: WiseKeys): Promise<unknown> {
   const url = `https://api.wise.com${path}`;
   const res = await fetch(url, {
     headers: {
@@ -41,10 +41,11 @@ async function wiseFetch(path: string, keys: WiseKeys): Promise<any> {
 
 export async function fetchWiseProfiles(keys: WiseKeys): Promise<WiseProfile[]> {
   const data = await wiseFetch('/v1/profiles', keys);
-  return (data || []).map((p: any) => ({
-    id: p.id,
-    fullName: p.fullName,
-    email: p.email,
+  const list = (data as unknown as Record<string, unknown>[]) || [];
+  return list.map((p) => ({
+    id: String(p.id ?? ''),
+    fullName: String(p.fullName ?? ''),
+    email: String(p.email ?? ''),
   }));
 }
 
@@ -56,7 +57,8 @@ export async function fetchWiseBalances(keys: WiseKeys): Promise<WiseBalance[]> 
   const profileId = keys.profileId || profiles[0].id;
 
   const data = await wiseFetch(`/v1/profiles/${profileId}/balances`, keys);
-  return (data || []).map((b: any) => ({
+  const list = (data as unknown as Record<string, string>[]) || [];
+  return list.map((b) => ({
     currency: b.currency,
     amount: parseFloat(b.amount || '0'),
     availableAmount: parseFloat(b.availableAmount || b.amount || '0'),

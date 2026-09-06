@@ -1,9 +1,10 @@
-# 整合資產管理平台（Wealth Dashboard）— 規格計劃書 v3.0（sweet spot sharp rewrite）
+# 整合資產管理平台（Wealth Dashboard）— 規格計劃書 v3.0.2（fleet upgrade）
 
-> **版本**：v3.0｜**更新日期**：2026-07-19｜**維護者**：Sophia (CPO) for Sean
-> **對接技術**：Alan (CTO)｜**對接 Repo**：[openclawsean024-create/wealth-dashboard](https://github.com/openclawsean024-create/wealth-dashboard)
+> **版本**：v3.0.2｜**更新日期**：2026-09-06｜**維護者**：Sophia (CPO) for Sean｜**升級者**：Sean 10-repo-fleet
+> **前版**：v3.0（2026-07-19）｜**對接技術**：Alan (CTO)｜**對接 Repo**：[openclawsean024-create/wealth-dashboard](https://github.com/openclawsean024-create/wealth-dashboard)
 > **Live**：https://wealth-dashboard.vercel.app（待部署）
-> **Sweet Spot**：8/10（**台灣多券商跨帳戶 + 海外券商 + 多幣別成本基礎 + 含息含費真實 IRR/MWR CSV 試算表**）→ 本版從 v2.2.1 升 v3.0 銳化
+> **Sweet Spot**：8/10（**台灣多券商跨帳戶 + 海外券商 + 多幣別成本基礎 + 含息含費真實 IRR/MWR CSV 試算表**）→ 本版從 v2.2.1 升 v3.0 銳化；v3.0.2 為 fleet 升級（lint clean + GHA + changelog）
+> **v3.0.2 變更**：見 [`PRD/CHANGELOG.md`](CHANGELOG.md)
 
 ---
 

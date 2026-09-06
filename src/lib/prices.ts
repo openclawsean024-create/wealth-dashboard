@@ -91,13 +91,17 @@ async function fetchYahoo(symbol: string): Promise<PriceQuote> {
     next: { revalidate: 60 },
   });
   if (!res.ok) throw new Error(`Yahoo ${symbol}: HTTP ${res.status}`);
-  const json: any = await res.json();
-  const result = json?.chart?.result?.[0];
+  const json = (await res.json()) as Record<string, unknown>;
+  const chart = json?.chart as { result?: Array<Record<string, unknown>> } | undefined;
+  const result = chart?.result?.[0];
   if (!result) throw new Error(`Yahoo ${symbol}: empty result`);
 
-  const meta = result.meta;
-  const price = meta?.regularMarketPrice ?? result.indicators?.quote?.[0]?.close?.slice(-1)[0];
-  const prev = meta?.chartPreviousClose ?? meta?.previousClose;
+  const meta = (result.meta ?? {}) as Record<string, unknown>;
+  const indicators = (result.indicators ?? {}) as { quote?: Array<{ close?: number[] }> };
+  const closeSlice = indicators.quote?.[0]?.close ?? [];
+  const lastClose = closeSlice[closeSlice.length - 1];
+  const price = (meta.regularMarketPrice as number | undefined) ?? lastClose;
+  const prev = (meta.chartPreviousClose as number | undefined) ?? (meta.previousClose as number | undefined);
   if (price == null || prev == null) throw new Error(`Yahoo ${symbol}: missing price`);
 
   const change24h = ((price - prev) / prev) * 100;
@@ -105,9 +109,9 @@ async function fetchYahoo(symbol: string): Promise<PriceQuote> {
   return {
     symbol,
     price,
-    currency: meta.currency ?? "USD",
+    currency: (meta.currency as string) ?? "USD",
     change24h: Number(change24h.toFixed(2)),
-    asOf: new Date((meta.regularMarketTime ?? Date.now() / 1000) * 1000).toISOString(),
+    asOf: new Date(((meta.regularMarketTime as number | undefined) ?? Date.now() / 1000) * 1000).toISOString(),
     source: "yahoo",
   };
 }
@@ -118,7 +122,7 @@ async function fetchCoingecko(symbol: string): Promise<PriceQuote> {
   const url = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true`;
   const res = await fetch(url, { next: { revalidate: 60 } });
   if (!res.ok) throw new Error(`CoinGecko ${id}: HTTP ${res.status}`);
-  const json: any = await res.json();
+  const json = (await res.json()) as Record<string, Record<string, number>>;
   const row = json?.[id];
   if (!row || row.usd == null) throw new Error(`CoinGecko ${id}: missing price`);
 

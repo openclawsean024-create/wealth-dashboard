@@ -814,18 +814,18 @@ export default function DashboardClient({
       const res = await fetch("/api/assets", { cache: "no-store" });
       if (!res.ok) throw new Error("sync failed");
       const data = await res.json();
-      setAssets((data.assets ?? []).map((a: any) => ({
-        id: a.id,
-        name: a.name,
-        value: a.value,
-        costBasis: a.costBasis ?? undefined,
-        category: a.category,
-        currency: a.currency,
-        institution: a.institution ?? undefined,
-        symbol: a.symbol ?? undefined,
-        quantity: a.quantity ?? undefined,
-        avgPrice: a.avgPrice ?? undefined,
-        updatedAt: a.updatedAt,
+      setAssets((data.assets ?? []).map((a: Record<string, unknown>) => ({
+        id: String(a.id ?? ''),
+        name: String(a.name ?? ''),
+        value: Number(a.value ?? 0),
+        costBasis: a.costBasis != null ? Number(a.costBasis) : undefined,
+        category: String(a.category ?? 'other'),
+        currency: String(a.currency ?? 'TWD'),
+        institution: a.institution != null ? String(a.institution) : undefined,
+        symbol: a.symbol != null ? String(a.symbol) : undefined,
+        quantity: a.quantity != null ? Number(a.quantity) : undefined,
+        avgPrice: a.avgPrice != null ? Number(a.avgPrice) : undefined,
+        updatedAt: String(a.updatedAt ?? new Date().toISOString()),
       })));
       setSyncTime(new Date().toISOString());
     } catch (e) {
